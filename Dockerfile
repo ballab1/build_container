@@ -1,4 +1,4 @@
-FROM alpine:3.4
+FROM alpine:3.6
 
 ARG TZ=UTC
 
@@ -8,9 +8,11 @@ ENV VERSION=0.4 \
 ADD docker-entrypoint.sh /
 
 # Run-time Dependencies
-RUN apk upgrade --update && \
-    apk add tzdata && cp /usr/share/zoneinfo/$TZ /etc/timezone && apk del tzdata && \
-    apk add --no-cache $BUILDTIME_PKGS && \
-    chmod u+rx,g+rx,o+rx,a-w /docker-entrypoint.sh
+RUN set -e \
+    && apk update \
+    && apk add --no-cache $BUILDTIME_PKGS \
+    && echo "$TZ" > /etc/TZ \
+    && cp /usr/share/zoneinfo/$TZ /etc/timezone \
+    && chmod u+rx,g+rx,o+rx,a-w /docker-entrypoint.sh
 
 CMD /docker-entrypoint.sh
