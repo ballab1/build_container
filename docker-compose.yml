@@ -1,0 +1,20 @@
+version: '3.1'
+
+services:
+    alpinefull:
+        build:
+            context: .
+            args:
+                TZ: "America/New_York"
+        image: alpinefull:20170820
+        container_name: alpinefull
+        hostname: alpinefull
+        restart: unless-stopped
+        environment:
+            TZ: "America/New_York"
+        volumes:
+                - ./opt:/opt
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "10m"
