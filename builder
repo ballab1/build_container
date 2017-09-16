@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+set -o errexit
+set -o nounset
 
 docker-compose build alpinefull
 docker-compose up -d

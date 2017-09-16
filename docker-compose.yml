@@ -9,11 +9,11 @@ services:
         image: alpinefull:20170820
         container_name: alpinefull
         hostname: alpinefull
-        restart: unless-stopped
+#        restart: unless-stopped
         environment:
             TZ: "America/New_York"
         volumes:
-                - ./opt:/opt
+                - ../opt:/opt
         logging:
             driver: "json-file"
             options:

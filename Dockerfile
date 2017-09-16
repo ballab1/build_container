@@ -3,7 +3,9 @@ FROM alpine:3.6
 ARG TZ=UTC
 
 ENV VERSION=0.4 \
-    BUILDTIME_PKGS="alpine-sdk linux-headers curl busybox bash rsync perl gd zlib libpng jpeg freetype mysql perl-plack findutils"
+    BUILDTIME_PKGS="alpine-sdk linux-headers curl busybox bash rsync perl gd zlib libpng jpeg freetype mysql perl-plack findutils" \
+    CORE_PKGS="coreutils git openssh-client curl unzip bash ttf-dejavu alpine-sdk bash-completion supervisor shadow" \
+    NAGIOS_PKGS="busybox rsync perl gd zlib libpng jpeg freetype mysql perl-plack"
 
 ADD docker-entrypoint.sh /
 
