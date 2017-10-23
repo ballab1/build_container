@@ -4,7 +4,7 @@ ARG TZ=UTC
 
 ENV VERSION=0.4 \
     BUILDTIME_PKGS="alpine-sdk linux-headers curl busybox bash rsync perl gd zlib libpng jpeg freetype mysql perl-plack findutils" \
-    CORE_PKGS="coreutils git openssh-client curl unzip bash ttf-dejavu alpine-sdk bash-completion supervisor shadow libxml2-dev" \
+    CORE_PKGS="coreutils git openssh-client curl unzip bash ttf-dejavu bash-completion supervisor shadow libxml2-dev" \
     NAGIOS_PKGS="busybox rsync perl gd zlib libpng jpeg freetype mysql perl-plack" \
     OTHER_PKGS="gd-dev libpng-dev jpeg-dev"    
 
