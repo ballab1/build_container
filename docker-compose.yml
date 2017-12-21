@@ -6,14 +6,14 @@ services:
             context: .
             args:
                 TZ: "America/New_York"
-        image: alpinefull:20170820
+        image: alpinefull:20171219
         container_name: alpinefull
         hostname: alpinefull
 #        restart: unless-stopped
         environment:
             TZ: "America/New_York"
         volumes:
-                - ../opt:/opt
+                - ../vols/opt:/opt
         logging:
             driver: "json-file"
             options:
