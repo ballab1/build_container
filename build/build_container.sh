@@ -5,13 +5,16 @@ set -o errexit
 set -o nounset 
 #set -o verbose
 
+declare -r CONTAINER='ALPINEFULL'
+
+export TZ=${TZ:-'America/New_York'}
+declare -r TOOLS="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"  
+
+
 declare -r BUILDTIME_PKGS="alpine-sdk busybox curl findutils freetype gd git libpng libxml2-dev linux-headers jpeg mysql perl perl-plack rsync zlib"
 declare -r CORE_PKGS="bash bash-completion coreutils openssh-client shadow supervisor ttf-dejavu unzip"
 declare -r NAGIOS_PKGS="busybox rsync perl gd zlib libpng jpeg freetype mysql perl-plack"
 declare -r OTHER_PKGS="gd-dev libpng-dev jpeg-dev"    
-
-declare -r TZ=${TZ:-'America/New_York'}
-declare TOOLS="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"  
 
 
 # global exceptions
@@ -57,6 +60,21 @@ function cleanup()
 }
  
 #############################################################################
+function header()
+{
+    local -r bars='+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'
+    printf "\n\n\e[1;34m%s\nBuilding container: \e[0m%s\e[1;34m\n%s\e[0m\n" $bars $CONTAINER $bars
+}
+ 
+#############################################################################
+function install_CUSTOMIZATIONS()
+{
+    printf "\nAdd configuration and customizations\n"
+    cp -r "${TOOLS}/usr"/* /usr
+    ln -s /usr/local/bin/docker-entrypoint.sh /docker-entrypoint.sh
+}
+
+#############################################################################
 function installAlpinePackages() {
     apk update
     apk add --no-cache $CORE_PKGS $OTHER_PKGS
@@ -71,22 +89,12 @@ function installTimezone() {
 }
 
 #############################################################################
-function install_CUSTOMIZATIONS()
-{
-    printf "\nAdd configuration and customizations\n"
-    cp -r "${TOOLS}/usr"/* /usr
-    ln -s /usr/local/bin/docker-entrypoint.sh /docker-entrypoint.sh
-}
-
-
-#############################################################################
 function setPermissions()
 {
     printf "\nmake sure that ownership & permissions are correct\n"
 
     chmod u+rwx /usr/local/bin/docker-entrypoint.sh
 }
-
 
 #############################################################################
 
@@ -96,6 +104,7 @@ trap catch_pipe PIPE
 
 set -o verbose
 
+header
 installAlpinePackages
 installTimezone 
 install_CUSTOMIZATIONS
