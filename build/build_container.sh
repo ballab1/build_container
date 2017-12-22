@@ -57,7 +57,7 @@ function cleanup()
 }
  
 #############################################################################
-function installPackages() {
+function installAlpinePackages() {
     apk update
     apk add --no-cache $CORE_PKGS $OTHER_PKGS
     apk add --no-cache --virtual .buildDepedencies $BUILDTIME_PKGS
@@ -71,7 +71,7 @@ function installTimezone() {
 }
 
 #############################################################################
-function installCUSTOMIZATIONS()
+function install_CUSTOMIZATIONS()
 {
     printf "\nAdd configuration and customizations\n"
     cp -r "${TOOLS}/usr"/* /usr
@@ -96,9 +96,9 @@ trap catch_pipe PIPE
 
 set -o verbose
 
-installPackages
+installAlpinePackages
 installTimezone 
-installCUSTOMIZATIONS
+install_CUSTOMIZATIONS
 setPermissions
 cleanup
 exit 0 
