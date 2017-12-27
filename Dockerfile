@@ -21,5 +21,6 @@ RUN set -o verbose \
 # We expose phpMyAdmin on port 80
 #EXPOSE 80
 
-ENTRYPOINT [ "/docker-entrypoint.sh" ]
+<<<<<<< HEAD
+ENTRYPOINT [ "docker-entrypoint.sh" ]
 CMD ["alpinefull"]
