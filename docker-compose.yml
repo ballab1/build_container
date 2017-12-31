@@ -3,7 +3,7 @@ version: '3.1'
 services:
     alpinefull:
         build:
-            context: .
+            context: ../alpinefull
             args:
                 TZ: "America/New_York"
         image: alpinefull:20171219
@@ -13,7 +13,7 @@ services:
         environment:
             TZ: "America/New_York"
         volumes:
-                - ../vols/opt:/opt
+                - ../alpinefull/vols/opt:/opt
         logging:
             driver: "json-file"
             options:

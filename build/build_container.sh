@@ -70,7 +70,12 @@ function header()
 function install_CUSTOMIZATIONS()
 {
     printf "\nAdd configuration and customizations\n"
-    cp -r "${TOOLS}/usr"/* /usr
+
+    declare -a DIRECTORYLIST="/etc /usr /opt /var"
+    for dir in ${DIRECTORYLIST}; do
+        [[ -d "${TOOLS}/${dir}" ]] && cp -r "${TOOLS}/${dir}/"* "${dir}/"
+    done
+
     ln -s /usr/local/bin/docker-entrypoint.sh /docker-entrypoint.sh
 }
 
