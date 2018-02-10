@@ -10,7 +10,7 @@ COPY build /tmp/
 # build content
 RUN set -o verbose \
     && chmod u+rwx /tmp/container/build.sh \
-    && /tmp/container/build.sh
+    && /tmp/container/build.sh 'ALPINEFULL'
 RUN rm -rf /tmp/*
 
 ENTRYPOINT [ "docker-entrypoint.sh" ]
