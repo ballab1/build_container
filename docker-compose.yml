@@ -4,12 +4,12 @@ services:
     alpinefull:
         build:
             args:
-                CODE_VERSION: base_container:20180207
+                CODE_VERSION: base_container:20180210
             cache_from:
-                - base_container:20180207
+                - base_container:20180210
             context: .
         container_name: alpinefull
-        image: alpinefull:20180207
+        image: alpinefull:20180210
         hostname: alpinefull
         logging:
             driver: "json-file"
