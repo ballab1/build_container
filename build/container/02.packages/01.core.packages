@@ -1,0 +1,2 @@
+# core Packages
+apk add --no-cache bash bash-completion coreutils openssh-client shadow supervisor ttf-dejavu unzip

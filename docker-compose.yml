@@ -3,18 +3,17 @@ version: '3.1'
 services:
     alpinefull:
         build:
-            context: ../alpinefull
             args:
-                TZ: "America/New_York"
-        image: alpinefull:20171219
+                CODE_VERSION: base_container:20180207
+            cache_from:
+                - base_container:20180207
+            context: .
         container_name: alpinefull
+        image: alpinefull:20180207
         hostname: alpinefull
-#        restart: unless-stopped
-        environment:
-            TZ: "America/New_York"
-        volumes:
-                - ../alpinefull/vols/opt:/opt
         logging:
             driver: "json-file"
             options:
                 max-size: "10m"
+        volumes:
+                - ./vols-rw/opt:/opt
