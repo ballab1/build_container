@@ -11,7 +11,7 @@ services:
             context: .
         container_name: alpinefull
 #        depends_on:
-#            - base_container:20180210
+#            - base
         image: alpinefull:20180210
         hostname: alpinefull
         logging:
