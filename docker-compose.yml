@@ -10,8 +10,8 @@ services:
                 - alpine:3.6                 
             context: .
         container_name: alpinefull
-#        depends_on:
-#            - base
+        depends_on:
+            - base
         image: alpinefull:20180210
         hostname: alpinefull
         logging:
@@ -20,3 +20,14 @@ services:
                 max-size: "10m"
         volumes:
                 - ./vols-rw/opt:/opt
+
+
+    base:
+        build:
+            args:
+                CODE_VERSION: alpine:3.6
+                TZ: "America/New_York"
+            cache_from:
+                - alpine:3.6
+            context: ../base_container
+        image: base_container:20180210
