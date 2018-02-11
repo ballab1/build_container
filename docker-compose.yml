@@ -1,4 +1,4 @@
-version: '3.2'
+version: '3.5'
 
 services:
     alpinefull:
@@ -7,8 +7,11 @@ services:
                 CODE_VERSION: base_container:20180210
             cache_from:
                 - base_container:20180210
+                - alpine:3.6                 
             context: .
         container_name: alpinefull
+#        depends_on:
+#            - base_container:20180210
         image: alpinefull:20180210
         hostname: alpinefull
         logging:
