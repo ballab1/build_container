@@ -1,8 +1,9 @@
-ARG CODE_VERSION=base_container:20180210
-FROM $CODE_VERSION
+ARG FROM_BASE=base_container:20180210
+FROM $FROM_BASE
 
-ENV VERSION=1.0.0    
-LABEL version=$VERSION
+# version of this docker image
+ARG CONTAINER_VERSION=1.0.0 
+LABEL version=$CONTAINER_VERSION  
 
 # Add configuration and customizations
 COPY build /tmp/
