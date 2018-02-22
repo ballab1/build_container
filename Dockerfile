@@ -5,6 +5,9 @@ FROM $FROM_BASE
 ARG CONTAINER_VERSION=1.0.0 
 LABEL version=$CONTAINER_VERSION  
 
+# set to non zero for the framework to show verbose action scripts
+ARG DEBUG_TRACE=0
+
 # Add configuration and customizations
 COPY build /tmp/
 

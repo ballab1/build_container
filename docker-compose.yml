@@ -4,8 +4,9 @@ services:
     alpinefull:
         build:
             args:
-                FROM_BASE: base_container:20180217
+                DEBUG_TRACE: 0
                 CONTAINER_VERSION: 1.0.2
+                FROM_BASE: base_container:20180217
             cache_from:
                 - base_container:20180217
                 - alpine:3.6                 
@@ -24,8 +25,8 @@ services:
     base:
         build:
             args:
-                FROM_BASE: alpine:3.6
                 CONTAINER_VERSION: 1.0.2
+                FROM_BASE: alpine:3.6
                 TZ: "America/New_York"
             cache_from:
                 - alpine:3.6
