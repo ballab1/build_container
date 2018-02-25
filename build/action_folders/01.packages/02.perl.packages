@@ -1,2 +1,5 @@
 # perl Packages
-apk add --no-cache openssl-dev perl perl-dev perl-utils
+
+if [ "${CBF['os_id']}" = 'alpine' ]; then
+    apk add --no-cache openssl-dev perl perl-dev perl-utils
+fi

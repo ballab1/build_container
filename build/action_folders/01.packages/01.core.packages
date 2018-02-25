@@ -1,2 +1,5 @@
 # core Packages
-apk add --no-cache bash-completion coreutils openssh-client shadow supervisor sudo ttf-dejavu unzip
+
+if [ "${CBF['os_id']}" = 'alpine' ]; then
+    apk add --no-cache bash-completion coreutils openssh-client shadow supervisor sudo ttf-dejavu unzip
+fi
