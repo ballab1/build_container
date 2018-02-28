@@ -4,14 +4,17 @@ services:
     alpinefull:
         build:
             args:
-                DEBUG_TRACE: 0
                 CONTAINER_VERSION: 1.0.2
+                DEBUG_TRACE: 0
                 FROM_BASE: base_container:20180217
             cache_from:
                 - base_container:20180217
                 - alpine:3.6                 
             context: .
+            dockerfile: Dockerfile
         container_name: alpinefull
+        environment:
+            CONTAINER_NAME: alpinefull
         image: alpinefull:20180217
         hostname: alpinefull
         logging:
@@ -21,14 +24,3 @@ services:
         volumes:
                 - ./vols-rw/opt:/opt
 
-
-    base:
-        build:
-            args:
-                CONTAINER_VERSION: 1.0.2
-                FROM_BASE: alpine:3.6
-                TZ: "America/New_York"
-            cache_from:
-                - alpine:3.6
-            context: ../base_container
-        image: base_container:20180217
