@@ -5,20 +5,20 @@ services:
         build:
             args:
                 CONTAINER_NAME: alpinefull
-                CONTAINER_VERSION: 1.0.2
+                CONTAINER_VERSION: 1.0.5
                 DEBUG_TRACE: 0
-                FROM_BASE: base_container:20180217
+                FROM_BASE: base_container:20180310
             cache_from:
-                - base_container:20180217
+                - base_container:20180310
                 - alpine:3.6                 
             context: .
             dockerfile: Dockerfile
         container_name: alpinefull
-        image: alpinefull:20180217
+        image: alpinefull:20180310
         hostname: alpinefull
-        logging:
-            driver: "json-file"
+            driver: json-file
             options:
+                max-file: "3"
                 max-size: "10m"
         volumes:
                 - ./vols-rw/opt:/opt
