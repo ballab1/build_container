@@ -1,4 +1,4 @@
-ARG FROM_BASE=base_container:20180210
+ARG FROM_BASE=base_container:20180211
 FROM $FROM_BASE
 
 # name and version of this docker image
