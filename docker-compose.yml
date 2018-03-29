@@ -4,17 +4,18 @@ services:
     alpinefull:
         build:
             args:
+                CBF_VERSION: ${CBF_VERSION:-dev}
                 CONTAINER_NAME: alpinefull
-                CONTAINER_VERSION: 1.0.7
+                CONTAINER_VERSION: 1.0.8
                 DEBUG_TRACE: 0
-                FROM_BASE: base_container:20180325
+                FROM_BASE: base_container:20180329
             cache_from:
-                - base_container:20180325
+                - base_container:20180329
                 - alpine:3.6                 
             context: .
             dockerfile: Dockerfile
         container_name: alpinefull
-        image: alpinefull:20180325
+        image: alpinefull:20180329
         hostname: alpinefull
             driver: json-file
             options:
