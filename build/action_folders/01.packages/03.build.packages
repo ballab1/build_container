@@ -1,7 +1,7 @@
 # build Packages
 
 if [ "${CBF['os_id']}" = 'alpine' ]; then
-    declare PKGS='alpine-sdk build-base curl expat-dev file findutils g++ gcc gcc-objc git gnutls-utils jpeg libc6-compat libtool libxml2-dev linux-headers make mysql perl-plack rsync'
+    declare PKGS='alpine-sdk build-base busybox curl expat expat-dev file findutils freetype g++ gcc gcc-objc gd git gnutls-utils jpeg libc6-compat libpng libtool libxml2-dev linux-headers make mysql perl perl-plack rsync zlib'
     package.checkIfInstalled "$PKGS"
     apk add --no-cache --virtual .buildDepedencies $PKGS 
 fi
