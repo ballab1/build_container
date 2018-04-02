@@ -4,6 +4,7 @@ services:
     alpinefull:
         build:
             args:
+                CBF_VERSION: ${CBF_VERSION:-dev}
                 CONTAINER_NAME: alpinefull
                 CONTAINER_VERSION: 1.0.8
                 DEBUG_TRACE: 0
