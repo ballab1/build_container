@@ -7,13 +7,14 @@ services:
                 CBF_VERSION: ${CBF_VERSION:-dev}
                 CONTAINER_NAME: alpinefull
                 CONTAINER_VERSION: 1.0.8
-                DEBUG_TRACE: 0
                 FROM_BASE: base_container:latest
             cache_from:
                 - base_container:latest
                 - alpine:3.6                 
             context: .
             dockerfile: Dockerfile
+        environment:
+            DEBUG_TRACE: ${DEBUG_TRACE:-0}
         container_name: alpinefull
         image: alpinefull:latest
         hostname: alpinefull

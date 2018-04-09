@@ -1,7 +1,0 @@
-# perl Packages
-
-if [ "${CBF['os_id']}" = 'alpine' ]; then
-    declare PKGS='openssl-dev perl perl-dev perl-utils'
-    package.checkIfInstalled "$PKGS"
-    apk add --no-cache $PKGS 
-fi

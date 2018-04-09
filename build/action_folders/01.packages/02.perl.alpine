@@ -1,0 +1,6 @@
+# perl Packages
+
+declare -a PKGS=( openssl-dev
+                  perl
+                  perl-dev
+                  perl-utils )
