@@ -1,0 +1,24 @@
+# build Packages
+
+declare -a OPTS=( '--virtual' '.buildDependencies' )
+declare -a PKGS=( alpine-sdk
+                  build-base
+                  curl
+                  expat-dev
+                  file
+                  findutils
+                  g++
+                  gcc
+                  gcc-objc
+                  gd
+                  git
+                  gnutls-utils
+                  jpeg
+                  libc6-compat
+                  libtool
+                  libxml2-dev
+                  linux-headers
+                  make
+                  mysql
+                  perl-plack
+                  rsync)
