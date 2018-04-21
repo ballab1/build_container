@@ -1,0 +1,9 @@
+# core Packages
+
+declare -a PKGS=( bash-completion
+                  coreutils
+                  openssh-client
+                  supervisor
+                  sudo
+                  ttf-dejavu
+                  unzip )

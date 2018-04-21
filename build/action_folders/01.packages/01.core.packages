@@ -1,7 +1,0 @@
-# core Packages
-
-if [ "${CBF['os_id']}" = 'alpine' ]; then
-    declare PKGS='bash-completion coreutils openssh-client shadow supervisor sudo ttf-dejavu unzip'
-    package.checkIfInstalled "$PKGS"
-    apk add --no-cache $PKGS 
-fi
