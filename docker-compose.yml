@@ -7,7 +7,7 @@ services:
                 CBF_VERSION: ${CBF_VERSION:-dev}
                 CONTAINER_NAME: alpinefull
                 CONTAINER_VERSION: 1.0.8
-                FROM_BASE: base_container:latest
+                FROM_BASE: base_container:${CONTAINER_TAG:-latest}
             cache_from:
                 - base_container:latest
                 - alpine:3.6                 
