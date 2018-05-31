@@ -1,23 +1,24 @@
-version: '3.5'
+version: '3.3'
 
 services:
     alpinefull:
         build:
             args:
-                CBF_VERSION: ${CBF_VERSION:-dev}
+                CBF_VERSION: "${CBF_VERSION:-}"
                 CONTAINER_NAME: alpinefull
-                CONTAINER_VERSION: 1.0.8
+                CONTAINER_VERSION: ${CONTAINER_VERSION:-3.0.0}
                 FROM_BASE: base_container:${CONTAINER_TAG:-latest}
             cache_from:
-                - base_container:latest
-                - alpine:3.6                 
+                - alpine:3.8
+                - base_container:${CONTAINER_TAG:-latest}
             context: .
             dockerfile: Dockerfile
+        container_name: alpinefull
         environment:
             DEBUG_TRACE: ${DEBUG_TRACE:-0}
-        container_name: alpinefull
-        image: alpinefull:latest
         hostname: alpinefull
+        image: alpinefull:${CONTAINER_TAG:-latest}
+        logging:
             driver: json-file
             options:
                 max-file: "3"
