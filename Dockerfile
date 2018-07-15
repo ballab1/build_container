@@ -1,4 +1,4 @@
-ARG FROM_BASE=base_container:${CONTAINER_TAG:-latest}
+ARG FROM_BASE=${DOCKER_REGISTRY:-}base_container:${CONTAINER_TAG:-latest}
 FROM $FROM_BASE
 
 # name and version of this docker image
