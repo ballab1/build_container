@@ -1,0 +1,184 @@
+#!/bin/bash
+
+##################################################################################
+#
+#  general 'git' scripts
+#
+##################################################################################
+
+#----------------------------------------------------------------------------------------------
+function git.branch()
+{
+    local branch="$(git rev-parse --abbrev-ref HEAD)"
+    [ -z "${GIT_BRANCH:-}" ] || branch="${GIT_BRANCH#*/}"
+    [ -z "${GIT_USE_BRANCH:-}" ] || branch=$GIT_USE_BRANCH
+    [ -z "${ghprbSourceBranch:-}" ] || branch=$ghprbSourceBranch
+
+    echo "${branch/* /}"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.branchOrTagName()
+{
+    # Checking if we are currently on a branch or tag
+    # If we are on a tag then "git branch" outputs "* (detached from <tag_name>)"
+    # otherwise outputs "* <branch_name>"
+    local checkBranchOrTag="$(git branch | grep '\* (detached')"
+
+    # If the value is null then it is branch so the conditional search needs to be for a branch
+    # otherwise for a tag. Defaulting the conditional search for a branch as that is the usual case
+    if [ -z "$checkBranchOrTag" ]; then
+        git branch | grep \* | cut -d ' ' -f2
+    else
+        git branch | grep \* | cut -d ' ' -f4 | tr -d ')'
+    fi
+}
+
+#----------------------------------------------------------------------------------------------
+function git.commit.author()
+{
+    git log -1 --pretty=format:"%an"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.commit.date()
+{
+    git log -1 --pretty=format:"%cd"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.commit.email()
+{
+    git log -1 --pretty=format:"%ce"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.commit.epoch()
+{
+    git log -1 --pretty=format:"%ct"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.commit.summary()
+{
+    git log -1 --pretty=format:"%s"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.HEAD()
+{
+    git rev-parse HEAD
+}
+
+#----------------------------------------------------------------------------------------------
+function git.isDevBuild()
+{
+    ! git.isMasterOrIntegrationBuild
+}
+
+#----------------------------------------------------------------------------------------------
+#
+# Boolean: return true if the branch is master, integration, beta, or release
+#
+function git.isMasterOrIntegrationBuild()
+{
+    branch_type=$(git.specialBranchName)
+    return [ "$branch_type" == "master" ] ||
+           [ "$branch_type" == "release" ] ||
+           [ "$branch_type" == "integration" ] ||
+           [ "$branch_type" == "beta" ]
+}
+
+#----------------------------------------------------------------------------------------------
+#
+# Returns true if the argument passed in is a repository managed file
+# if git.isRepositoryFile "project.version" echo "yes"
+#
+function git.isRepositoryFile()
+{
+    git ls-files $1 --error-unmatch &> /dev/null
+}
+
+#----------------------------------------------------------------------------------------------
+# Boolean: is a special branch
+function git.isSpecialBranch()
+{
+    local branch=$(git.branch)
+    [[ $branch == master ]] && return 0
+    [[ $branch =~ ^release($|/.*) ]] && return 0
+    [[ $branch =~ ^integration($|/.*) ]] && return 0
+    [[ $branch =~ ^hotfix($|/.*) ]] && return 0
+    [[ $branch == beta-next ]] && return 0
+
+    return 1
+}
+
+#----------------------------------------------------------------------------------------------
+function git.origin()
+{
+    git describe --tags --dirty --always
+}
+
+#----------------------------------------------------------------------------------------------
+function git.refs()
+{
+    git log -n1 --oneline --decorate | sed 's/[^\(]*(\([^\)]*\)).*/\1/'
+}
+
+#----------------------------------------------------------------------------------------------
+function git.remoteUrl()
+{
+    git config --get remote.origin.url
+}
+
+#----------------------------------------------------------------------------------------------
+function git.repo.name()
+{
+    basename "$(git rev-parse --show-toplevel)"
+}
+
+#----------------------------------------------------------------------------------------------
+#
+# Return the branch prefix name, or "dev" if unknown
+#
+function git.specialBranchName()
+{
+    local branch=$(git.branch)
+   if [[ $branch == master* ]];  then
+        echo "master"
+    elif [[ $branch == release* ]]; then
+        echo "release"
+    elif [[ $branch == integration* ]]; then
+        echo "integration"
+    elif [[ $branch == hotfix* ]]; then
+        echo "hotfix"
+    elif [[ $branch == beta-next* ]]; then
+        echo "beta"
+    else
+        echo "dev"
+    fi
+}
+
+#----------------------------------------------------------------------------------------------
+function git.toHTTPS()
+{
+    local remote=${1:?"Input parameter 'remote' must be passed to 'function ${FUNCNAME[0]}()'"}
+
+    remote="${remote#git@}"
+    remote="${remote%.git}"
+    remote="${remote//emc.com:/emc.com/}"
+    [ "${remote:0:8}" = 'https://' ] || remote="https://$remote"
+    echo "$remote"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.url()
+{
+    git.toHTTPS "$( git.remoteUrl )"
+}
+
+#----------------------------------------------------------------------------------------------
+function git.url.commit()
+{
+    echo "$(git.url)/commit/$(git.HEAD)"
+}

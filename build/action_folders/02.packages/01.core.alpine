@@ -2,8 +2,12 @@
 
 declare -a PKGS=( bash-completion
                   coreutils
+                  curl
+                  docker
+                  findutils
                   openssh-client
                   supervisor
                   sudo
                   ttf-dejavu
-                  unzip )
+                  unzip
+                  zip )
