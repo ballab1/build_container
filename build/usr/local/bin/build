@@ -1,0 +1,3 @@
+#!/bin/bash
+: ${BASE_TAG:=latest}
+build.all /opt "$@"

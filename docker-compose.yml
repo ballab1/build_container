@@ -1,33 +1,36 @@
 version: '3.3'
 
-# repo: https://github/ballab1/alpinefull.git
+# repo: https://github/ballab1/build_container.git
 # containerOS: alpine
 
 services:
-    alpinefull:
+    builder:
         build:
             args:
                 CBF_VERSION: ${CBF_VERSION:-}
-                CONTAINER_NAME: alpinefull
-                FROM_BASE: ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/base_container:${BASE_TAG:-latest}
+                COMPOSE_VERSION: ${COMPOSE_VERSION:-1.23.1}
+                CONTAINER_NAME: build_container
+                GIT_CRYPT_VERSION: ${GIT_CRYPT_VERSION:-0.6.0}
+                FROM_BASE: ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
             cache_from:
                 - ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/:${OS_VERSION:-}
                 - ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/base_container:${BASE_TAG:-latest}
+                - ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
             context: .
             dockerfile: Dockerfile
             labels:
                 container.build.time: $CONTAINER_BUILD_TIME
-                container.cbf.version: $CBF_VERSION
                 container.fingerprint: $CONTAINER_FINGERPRINT
                 container.git.refs: $CONTAINER_GIT_REFS
                 container.git.commit: $CONTAINER_GIT_COMMIT
                 container.git.url: $CONTAINER_GIT_URL
                 container.origin: $CONTAINER_ORIGIN
-                container.orginal.name: alpinefull
+                container.orginal.name: build_container
+                version.cbf: $CBF_VERSION
         environment:
             DEBUG_TRACE: ${DEBUG_TRACE:-0}
-        hostname: alpinefull
-        image: ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/alpinefull:${CONTAINER_TAG:-latest}
+        hostname: builder
+        image: ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/build_container:${CONTAINER_TAG:-latest}
         logging:
             driver: json-file
             options:

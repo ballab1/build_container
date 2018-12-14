@@ -5,6 +5,9 @@ declare -a PKGS=( bash-completion
                   curl
                   docker
                   findutils
+                  git
+                  git-lfs
+                  jq
                   openssh-client
                   supervisor
                   sudo

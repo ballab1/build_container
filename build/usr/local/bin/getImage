@@ -1,0 +1,8 @@
+#!/bin/bash
+
+declare image=${1:?}
+docker pull "$image"
+docker tag "$image" "ubuntu-s2:5000/${image##*/}"
+docker rmi "$image"
+docker push "ubuntu-s2:5000/${image##*/}"
+docker rmi "ubuntu-s2:5000/${image##*/}"

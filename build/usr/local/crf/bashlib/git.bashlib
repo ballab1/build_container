@@ -1,0 +1,204 @@
+#!/bin/bash
+
+##################################################################################
+#
+#  general 'git' scripts
+#
+##################################################################################
+
+#----------------------------------------------------------------------------------------------
+function git.branch()
+{
+    local branch="$(git rev-parse --abbrev-ref HEAD)"
+    [ -z "${GIT_BRANCH:-}" ] || branch="${GIT_BRANCH#*/}"
+    [ -z "${GIT_USE_BRANCH:-}" ] || branch=$GIT_USE_BRANCH
+    [ -z "${ghprbSourceBranch:-}" ] || branch=$ghprbSourceBranch
+
+    echo "${branch/* /}"
+}
+export -f git.branch
+
+#----------------------------------------------------------------------------------------------
+function git.branchOrTagName()
+{
+    # Checking if we are currently on a branch or tag
+    # If we are on a tag then "git branch" outputs "* (detached from <tag_name>)"
+    # otherwise outputs "* <branch_name>"
+    local checkBranchOrTag="$(git branch | grep '\* (detached')"
+
+    # If the value is null then it is branch so the conditional search needs to be for a branch
+    # otherwise for a tag. Defaulting the conditional search for a branch as that is the usual case
+    if [ -z "$checkBranchOrTag" ]; then
+        git branch | grep \* | cut -d ' ' -f2
+    else
+        git branch | grep \* | cut -d ' ' -f4 | tr -d ')'
+    fi
+}
+export -f git.branchOrTagName
+
+#----------------------------------------------------------------------------------------------
+function git.commitAuthor()
+{
+    git log -1 --pretty=format:"%an"
+}
+export -f git.commitAuthor
+
+#----------------------------------------------------------------------------------------------
+function git.commitDate()
+{
+    git log -1 --pretty=format:"%cd"
+}
+export -f git.commitDate
+
+#----------------------------------------------------------------------------------------------
+function git.commitEmail()
+{
+    git log -1 --pretty=format:"%ce"
+}
+export -f git.commitEmail
+
+#----------------------------------------------------------------------------------------------
+function git.commitEpoch()
+{
+    git log -1 --pretty=format:"%ct"
+}
+export -f git.commitEpoch
+
+#----------------------------------------------------------------------------------------------
+function git.commitSummary()
+{
+    git log -1 --pretty=format:"%s"
+}
+export -f git.commitSummary
+
+#----------------------------------------------------------------------------------------------
+function git.HEAD()
+{
+    git rev-parse HEAD
+}
+export -f git.HEAD
+
+#----------------------------------------------------------------------------------------------
+function git.isDevBuild()
+{
+    ! git.isMasterOrIntegrationBuild
+}
+export -f git.isDevBuild
+
+#----------------------------------------------------------------------------------------------
+#
+# Boolean: return true if the branch is master, integration, beta, or release
+#
+function git.isMasterOrIntegrationBuild()
+{
+    branch_type=$(git.specialBranchName)
+    return [ "$branch_type" == "master" ] ||
+           [ "$branch_type" == "release" ] ||
+           [ "$branch_type" == "integration" ] ||
+           [ "$branch_type" == "beta" ]
+}
+export -f git.isMasterOrIntegrationBuild
+
+#----------------------------------------------------------------------------------------------
+#
+# Returns true if the argument passed in is a repository managed file
+# if git.isRepositoryFile "project.version" echo "yes"
+#
+function git.isRepositoryFile()
+{
+    git ls-files $1 --error-unmatch &> /dev/null
+}
+export -f git.isRepositoryFile
+
+#----------------------------------------------------------------------------------------------
+# Boolean: is a special branch
+function git.isSpecialBranch()
+{
+    local branch=$(git.branch)
+    [[ $branch == master ]] && return 0
+    [[ $branch =~ ^release($|/.*) ]] && return 0
+    [[ $branch =~ ^integration($|/.*) ]] && return 0
+    [[ $branch =~ ^hotfix($|/.*) ]] && return 0
+    [[ $branch == beta-next ]] && return 0
+
+    return 1
+}
+export -f git.isSpecialBranch
+
+#----------------------------------------------------------------------------------------------
+function git.origin()
+{
+    git describe --tags --dirty --always
+}
+export -f git.origin
+
+#----------------------------------------------------------------------------------------------
+function git.refs()
+{
+    git log -n1 --oneline --decorate | sed 's/[^\(]*(\([^\)]*\)).*/\1/'
+}
+export -f git.refs
+
+#----------------------------------------------------------------------------------------------
+function git.remoteUrl()
+{
+    git config --get remote.origin.url
+}
+export -f git.remoteUrl
+
+#----------------------------------------------------------------------------------------------
+function git.repoName()
+{
+    basename "$(git rev-parse --show-toplevel)"
+}
+export -f git.repoName
+
+#----------------------------------------------------------------------------------------------
+#
+# Return the branch prefix name, or "dev" if unknown
+#
+function git.specialBranchName()
+{
+    local branch=$(git.branch)
+   if [[ $branch == master* ]];  then
+        echo "master"
+    elif [[ $branch == release* ]]; then
+        echo "release"
+    elif [[ $branch == integration* ]]; then
+        echo "integration"
+    elif [[ $branch == hotfix* ]]; then
+        echo "hotfix"
+    elif [[ $branch == beta-next* ]]; then
+        echo "beta"
+    else
+        echo "dev"
+    fi
+}
+export -f git.specialBranchName
+
+#----------------------------------------------------------------------------------------------
+function git.toHTTPS()
+{
+    local remote=${1:?"Input parameter 'remote' must be passed to 'function ${FUNCNAME[0]}()'"}
+
+    remote="${remote#git@}"
+    remote="${remote%.git}"
+    remote="${remote//emc.com:/emc.com/}"
+    [ "${remote:0:8}" = 'https://' ] || remote="https://$remote"
+    echo "$remote"
+}
+export -f git.toHTTPS
+
+#----------------------------------------------------------------------------------------------
+function git.url()
+{
+    git.toHTTPS "$( git.remoteUrl )"
+}
+export -f git.url
+
+#----------------------------------------------------------------------------------------------
+function git.urlCommit()
+{
+    echo "$(git.url)/commit/$(git.HEAD)"
+}
+export -f git.urlCommit
