@@ -49,13 +49,13 @@ EOF
 #------------------------------------------------------------------------------------------
 function argsParser()
 {
-    local -a args=( $@ )
+    local -a args=( "$@" )
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
     local -r longopts='help,Help,HELP,verbose'
     local -r shortopts='Hhv'
-    local -r options=$(getopt --longoptions "${longopts}" --options "${shortopts}" --name "$progname" -- ${args[@]}) || usage $?
+    local -r options=$(getopt --longoptions "${longopts}" --options "${shortopts}" --name "$progname" -- "${args[@]}") || usage $?
     eval set -- "$options"
 
     while true; do
@@ -79,18 +79,18 @@ function colorEcho()
     # start_color
     if [ -t 1 ] || [ "${FORCE_COLOR:-}" ]; then
         case "$color" in
-            RED)     echo -en "\e[91m";;
-            red)     echo -en "\e[31m";;
-            GREEN)   echo -en "\e[92m";;
-            green)   echo -en "\e[32m";;
-            YELLOW)  echo -en "\e[93m";;
-            yellow)  echo -en "\e[33m";;
-            BLUE)    echo -en "\e[34m";;
-            blue)    echo -en "\e[94m";;
-            MAGENTA) echo -en "\e[95m";;
-            magenta) echo -en "\e[35m";;
-            CYAN)    echo -en "\e[96m";;
-            cyan)    echo -en "\e[36m";;
+            RED)     echo -en '\e[91m';;
+            red)     echo -en '\e[31m';;
+            GREEN)   echo -en '\e[92m';;
+            green)   echo -en '\e[32m';;
+            YELLOW)  echo -en '\e[93m';;
+            yellow)  echo -en '\e[33m';;
+            BLUE)    echo -en '\e[34m';;
+            blue)    echo -en '\e[94m';;
+            MAGENTA) echo -en '\e[95m';;
+            magenta) echo -en '\e[35m';;
+            CYAN)    echo -en '\e[96m';;
+            cyan)    echo -en '\e[36m';;
             *)       : ;;
         esac
     fi
@@ -98,7 +98,7 @@ function colorEcho()
     echo -en "$*"
 
     # stop_color
-    if [ -t 1 ] || [ "${FORCE_COLOR:-}" ]; then echo -en "\e[0m" ; fi
+    if [ -t 1 ] || [ "${FORCE_COLOR:-}" ]; then echo -en '\e[0m'; fi
 }
 
 #------------------------------------------------------------------------------------------
@@ -111,15 +111,15 @@ function containerInfo()
     [ -z "${id:-}" ] && return
     [ -z "${CONTAINERS[$id]:-}" ] && return
 
-    mapfile -t containerData < <(printf '%s\n' "${CONTAINERS[$id]}" | sed -E 's|,|\n\g')
+    local -a containerData labels refs
+    mapfile -t containerData < <(printf '%s\n' "${CONTAINERS[$id]}" | sed -E 's|,|\n|g')
     mapfile -t labels < <(printf '%s\n' "${containerData[@]:2}" | sort)
 
     colorEcho 'blue'   '    Container:   '; echo "${containerData[0]:-}"
     colorEcho 'blue'   '         Name:   '; echo "${containerData[1]:-}"
-    colorEcho 'blue'   '           ID:   '; echoImageId "${id}\n" "${refId}\n"
-    colorEcho 'blue'   '      ImageId:   '; echoSHA256 "$imageId\n"
-    colorEcho 'blue'   '       Labels:   '; echo "${labels[0]}"
-    printf '                 %s\n' "${labels[@]:1}"
+    colorEcho 'blue'   '           ID:   '; echoImageId "${id}\\n" "${refId}\\n"
+    colorEcho 'blue'   '      ImageId:   '; echoSHA256 "$imageId\\n"
+    reportOnLabels "${labels[@]}"
 }
 
 #------------------------------------------------------------------------------------------
@@ -167,10 +167,23 @@ function dependentsOf()
 
     if [ "${SPECIFIED_IMAGE_DEPENDENCIES[$imageId]:-}" ]; then
         local dependent
+        local -a dependants=()
+        local -A dependents=()
         for dependent in ${SPECIFIED_IMAGE_DEPENDENCIES[$imageId]}; do
-            printf '%s\n' "$dependent"
-            dependentsOf "$dependent"
+            if [[ $dependent =~ \[sha256:.+\]=sha256: ]]; then
+                eval "dependents+=( $dependent )"
+            else
+                dependants+=( $dependent )
+            fi
         done
+        [ ${#dependants[*]} -gt 0 ] || return
+        for dependent in "${dependants[@]}"; do
+            while [ ${dependents[$dependent]:-} ]; do
+                dependent=${dependents[$dependent]:-}
+                dependants+=( $dependent )
+            done
+        done
+        printf '%s\n' "${dependants[@]}"
     fi
 }
 
@@ -265,7 +278,7 @@ function populateSpecifiedImageDependencies()
             mapfile -t dependents < <(getDependentImages  "$parentId")
             if [ ${#dependents[*]} -gt 0 ]; then
                 SPECIFIED_IMAGE_DEPENDENCIES[$parentId]="${dependents[*]}"
-                printf "[%s]='%s'\n" "$parentId" "${dependents[*]}"
+                printf "[%s]='%s\\n'" "$parentId" "${dependents[*]}"
                 populateSpecifiedImageDependencies "${dependents[@]}"
             fi
         done
@@ -280,7 +293,7 @@ function reportOnContainerDependents()
     local -a dependents_found=( "$@" )
 
     local dependent id
-    refImage="${IMAGES[$imageId]}\n"
+    refImage="${IMAGES[$imageId]}\\n"
 
     # determine what to display
     local -a display=()
@@ -289,17 +302,17 @@ function reportOnContainerDependents()
         [ -z "${IS_VERBOSE:-}" ] && [ "${IMAGES[$dependent]}" = '<none>:<none>' ] && continue
         id="${IMAGES[$dependent]}"
         [ -z "${CONTAINERS[$id]:-}" ] && continue
-        display+=( $dependent )
+        display+=( "$dependent" )
     done
 
     # report container dependents
     echo ''
     if [ ${#display[*]} -eq 0 ]; then
-        echo -en 'No containers depend on '; echoImageId "${refImage}\n"
+        echo -en 'No containers depend on '; echoImageId "$refImage\\n"
     else
         local -a containerData labels
 
-        colorEcho 'YELLOW' 'Containers'; echo -en ' which '; colorEcho 'cyan' 'depend on '; echoImageId "${refImage}\n"
+        colorEcho 'YELLOW' 'Containers'; echo -en ' which '; colorEcho 'cyan' 'depend on '; echoImageId "$refImage\\n"
         for dependent in "${display[@]}"; do
             containerInfo "$dependent"
         done
@@ -319,19 +332,22 @@ function reportOnImageDependents()
     for dependent in "${dependents_found[@]}"; do
         [ -z "${IMAGES[$dependent]:-}" ] && continue
         [ -z "${IS_VERBOSE:-}" ] && [ "${IMAGES[$dependent]}" = '<none>:<none>' ] && continue
-        display+=( $dependent )
+        display+=( "$dependent" )
     done
 
     # report image dependents
     echo ''
     if [ ${#display[*]} -eq 0 ]; then
-        echo -en 'No images depend on '; colorEcho 'GREEN' "${refImage}\n"
+        echo -en 'No images depend on '; colorEcho 'GREEN' "$refImage\\n"
     else
-        colorEcho 'YELLOW' 'Images'; echo -en ' which '; colorEcho 'cyan' 'depend on '; echoImageId "${refImage}\n"
+        colorEcho 'YELLOW' 'Images'; echo -en ' which '; colorEcho 'cyan' 'depend on '; echoImageId "$refImage\\n"
         for dependent in "${display[@]}"; do
             echo -en "    "
             echoSHA256 "$dependent "
-            echoImageId "${IMAGES[$dependent]}\n" "${refImage}\n"
+            echoImageId "${IMAGES[$dependent]}\\n" "$refImage\\n"
+            local -a labels
+            mapfile -t labels < <(docker inspect "${IMAGES[$dependent]}" | jq '.[].Config.Labels'| grep '": "' |sed -E -e 's|  "||' -e 's|": "|=|' -e 's|",*||')
+            reportOnLabels "${labels[@]}"
         done
     fi
 }
@@ -348,7 +364,7 @@ function reportOnImageLayers()
     imageCount=0
     namedImageCount=0
     echo ''
-    colorEcho 'YELLOW' 'Layers'; echo -en ' contained in '; colorEcho 'GREEN' "${refImage}\n"
+    colorEcho 'YELLOW' 'Layers'; echo -en ' contained in '; colorEcho 'GREEN' "$refImage\\n"
     id="$imageId"
     while [ "$id" ]; do
         if [ "${IMAGES[$id]}" = '<none>:<none>' ]; then
@@ -356,7 +372,12 @@ function reportOnImageLayers()
         else
             (( ++namedImageCount )) || :
             echo -en '    '; echoSHA256 "$id "
-            echoImageId "${IMAGES[$id]}\n" "${refImage}\n"
+            echoImageId "${IMAGES[$id]}\\n" "$refImage\\n"
+
+            local -a labels
+            mapfile -t labels < <(docker inspect "${IMAGES[$id]}" | jq '.[].Config.Labels?'| grep '": "' |sed -E -e 's|  "||' -e 's|": "|=|' -e 's|",*||' ||:)
+            [ ${#labels[*]} -eq 0 ] || reportOnLabels "${labels[@]}"
+
         fi
         (( ++imageCount )) || :
         id="${IMAGE_PARENTS[$id]:-}"
@@ -369,6 +390,30 @@ function reportOnImageLayers()
 }
 
 #------------------------------------------------------------------------------------------
+function reportOnLabels()
+{
+    local -a labels=( "$@" )
+
+    [ ${#labels[*]:-} -gt 0 ] || return
+
+    colorEcho 'blue'   '       Labels:   '; echo "${labels[0]}"
+
+    local -a refs=()
+    local -i idx=-1
+    for (( i=${#labels[*]}-1; i>=0; i-- )); do
+        if [[ "${labels[i]:-}" == 'container.git.refs=('* ]]; then
+            idx=$i
+        elif [[ "${labels[i]:-}" == ' '* ]]; then
+            refs+=( "${labels[i]}" )
+            unset labels[i]
+            [ $idx -gt 0 ] && --idx
+        fi
+    done
+    [ ${#refs[*]} -gt 0 ] && labels[$idx]=${labels[$idx]}$(printf ',%s' "${refs[@]}")
+    printf '                 %s\n' "${labels[@]:1}"
+}
+
+#------------------------------------------------------------------------------------------
 function showCompleteReport()
 {
     local -a specifiedImages=( "$@" )
@@ -378,7 +423,6 @@ function showCompleteReport()
     local -a dependents_found
 
     for imageId in "${specifiedImages[@]}"; do
-
         dependents_found=()
         mapfile -t dependents_found < <(dependentsOf "$imageId")
         refImage="${IMAGES[$imageId]}"
@@ -390,7 +434,7 @@ function showCompleteReport()
         reportOnImageLayers "$refImage"
 
         if [ "${CONTAINERS[$refImage]:-}" ]; then
-            colorEcho 'YELLOW' "\nExecuting"; echo -en ' container '; colorEcho 'GREEN' "${refImage}\n"
+            colorEcho 'YELLOW' '\nExecuting'; echo -en ' container '; colorEcho 'GREEN' "$refImage\\n"
             containerInfo "$imageId" "$refImage"
         fi
     done
