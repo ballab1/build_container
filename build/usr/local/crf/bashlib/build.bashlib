@@ -277,7 +277,7 @@ function build.dependencyInfo()
 
     else
         # use parent's cbf.version
-        docker inspect "$base" | jq '.[].Config.Labels."version.cbf"?' | tr -d '"'
+        docker inspect "$base" | jq -r '.[].Config.Labels."version.cbf"?'
     fi
 }
 export -f build.dependencyInfo
@@ -301,7 +301,7 @@ function build.dockerCompose()
 
     local jsonConfig=$( build.yamlToJson "$compose_yaml" | jq '.services?' )
     if [ "${jsonConfig:-}" ]; then
-        local -r service="$(jq 'keys[0]?' <<< "$jsonConfig" | tr -d '"')"
+        local -r service="$(jq -r 'keys[0]?' <<< "$jsonConfig")"
         [ -z "${service:-}" ] || jq $(eval echo "'.\"$service\"?'") <<< "$jsonConfig"
     fi
 }
@@ -314,8 +314,7 @@ function build.findIdsWithFingerprint()
 
     curl --silent \
          --unix-socket /var/run/docker.sock http://localhost/images/json \
-         | jq ".[]|select(.Labels.\"container.fingerprint\" == \"$fingerprint\").RepoTags[]?" \
-         | tr -d '"'
+         | jq -r ".[]|select(.Labels.\"container.fingerprint\" == \"$fingerprint\").RepoTags[]?"
 }
 export -f build.findIdsWithFingerprint
 

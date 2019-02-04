@@ -172,8 +172,7 @@ function deploy.initialize()
 
         # get any defined volumes
         local -a dirs=(jq '.' "$json" )
-        mapfile -t dirs < <(jq ".services.${service_name}.volumes[]?" <<< "$json" \
-                           | tr -d '"' \
+        mapfile -t dirs < <(jq -r ".services.${service_name}.volumes[]?" <<< "$json" \
                            | awk -F ':' '{print $1}' \
                            | grep -v '/docker' \
                            | grep -Ev '^~' \
@@ -268,12 +267,12 @@ function deploy.passwordSecret()
     local -r pwdVar=${3:?}
 
     local secret jqquery
-    local password=$(jq '.services.'${service}'.environment.'${pwdVar} <<< "$json" | tr -d '"' )
+    local password=$(jq -r '.services.'${service}'.environment.'${pwdVar} <<< "$json" )
     if [ "$password" = 'null' ];then
-        password=$(jq '.services.'${service}'.environment.'${pwdVar}'_FILE' <<< "$json" | tr -d '"' )
+        password=$(jq -r '.services.'${service}'.environment.'${pwdVar}'_FILE' <<< "$json" )
         secret=$(basename "$password")
         jqquery=".secrets.\"${secret}\".file"
-        local pwd_file="$(eval echo "$(jq "$jqquery" <<< "$json" | tr -d '"' )")"
+        local pwd_file="$(eval echo "$(jq -r "$jqquery" <<< "$json" )")"
         [ -e $pwd_file ] || trap.die "Password file: '$pwd_file' not found. Used by startup of service: $service"
         password=$(< $pwd_file)
     fi
@@ -430,7 +429,7 @@ function deploy.updateContainerReference()
 
         local releaseJSON=$(docker.containerVersion "$line" "$json")
         # update workspace/docker-compose.yml when we pull latest images
-        local newline=$(jq '.newline' <<< "$releaseJSON" | tr -d '"')
+        local newline=$(jq -r '.newline' <<< "$releaseJSON")
         [ -z "$newline" ] || [ "$line" = "$newline" ] || eval sed -i -e "'s|$line|$newline|'" "'$dc_yaml'"
 
     done < <(cat "$dc_yaml")

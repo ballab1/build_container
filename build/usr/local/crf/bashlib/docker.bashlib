@@ -33,12 +33,12 @@ function docker.containerVersion()
     local -r image="$(sed -E 's|\s+image:\s+(.+)$|\1|' <<< "$line")"
     while read -r srvc; do
         local service=$(jq ".services.$srvc" <<< "$json")
-        [ $(jq '.image' <<< "$service" | tr -d '"') = "$image" ] || continue
+        [ $(jq -r '.image' <<< "$service") = "$image" ] || continue
 
-        local container=$(jq '.container_name' <<< "$service" | tr -d '"')
-        local version=$(docker inspect "$container" | jq '.[].Config.Labels."container.fingerprint"' | tr -d '"')
+        local container=$(jq -r '.container_name' <<< "$service")
+        local version=$(docker inspect "$container" | jq -r '.[].Config.Labels."container.fingerprint"')
         [ "$version" != 'null' ] || break
-        local newimage="$(docker inspect "$container" | jq '.[].Config.Image' | tr -d '"')"
+        local newimage="$(docker inspect "$container" | jq -r '.[].Config.Image')"
         newimage="${newimage%:*}:$version"
 
         echo -n '{"orgline":"'${line}'","orgimage":"'$(eval echo $image)'",'
@@ -46,7 +46,7 @@ function docker.containerVersion()
         echo '"newline":"'${line%\${CONTAINER_TAG*}'${CONTAINER_TAG:-'$version'}","newimage":"'$newimage'"}'
         break
 
-    done < <(jq '.services|keys[]' <<< "$json" | tr -d '"')
+    done < <(jq -r '.services|keys[]' <<< "$json")
 }
 export -f docker.containerVersion
 
@@ -55,9 +55,8 @@ function docker.networks()
 {
     local -a networks=( $( docker network ls | grep 'default' | awk "{ print \$1 }" ) )
     docker network inspect "${networks[@]}" \
-    | jq ".[].Containers|.[]|[.IPv4Address + \" : \" + .Name]|.[]" \
-    | sort -t "." -k 4g \
-    | tr -d '"'
+    | jq -r ".[].Containers|.[]|[.IPv4Address + \" : \" + .Name]|.[]" \
+    | sort -t "." -k 4g
 }
 export -f docker.networks
 
@@ -113,7 +112,7 @@ function docker.services()
 {
     local -r dc_yaml="${1:?'no docker-compose.yml specified'}"
 
-    docker.yamlToJson "$dc_yaml" | jq '.services|keys[]?' | tr -d '"'
+    docker.yamlToJson "$dc_yaml" | jq -r '.services|keys[]?'
 }
 export -f docker.services
 
