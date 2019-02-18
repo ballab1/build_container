@@ -6,4 +6,5 @@ declare -A builder=(
     ['group']=${BUILDER_GROUP:-builder}
     ['gid']=${BUILDER_GID:-$(builder.GID "${BUILDER_GROUP:-}")}
     ['shell']=/bin/bash
+    ['home']="${BUILDER_HOME:-/home/builder}"
 )

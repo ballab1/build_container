@@ -9,12 +9,7 @@
 #----------------------------------------------------------------------------------------------
 function git.branch()
 {
-    local branch="$(git rev-parse --abbrev-ref HEAD)"
-    [ -z "${GIT_BRANCH:-}" ] || branch="${GIT_BRANCH#*/}"
-    [ -z "${GIT_USE_BRANCH:-}" ] || branch=$GIT_USE_BRANCH
-    [ -z "${ghprbSourceBranch:-}" ] || branch=$ghprbSourceBranch
-
-    echo "${branch/* /}"
+    git rev-parse --abbrev-ref HEAD
 }
 export -f git.branch
 
@@ -24,17 +19,41 @@ function git.branchOrTagName()
     # Checking if we are currently on a branch or tag
     # If we are on a tag then "git branch" outputs "* (detached from <tag_name>)"
     # otherwise outputs "* <branch_name>"
-    local checkBranchOrTag="$(git branch | grep '\* (detached')"
+    local gb="$(git branch)"
+    local checkBranchOrTag="$(grep '\* (detached' <<< "$gb")"
 
     # If the value is null then it is branch so the conditional search needs to be for a branch
     # otherwise for a tag. Defaulting the conditional search for a branch as that is the usual case
-    if [ -z "$checkBranchOrTag" ]; then
-        git branch | grep \* | cut -d ' ' -f2
+    if [ -z "${checkBranchOrTag:-}" ]; then
+        grep \*  <<< "$gb" | cut -d ' ' -f2
     else
-        git branch | grep \* | cut -d ' ' -f4 | tr -d ')'
+        grep \*  <<< "$gb" | cut -d ' ' -f4 | tr -d ')'
     fi
 }
 export -f git.branchOrTagName
+
+#----------------------------------------------------------------------------------------------
+function git.checkout()
+{
+    local -r commit=${1:?}
+    shift
+    local -r flags=( "$@" )
+
+    git checkout ${flags[*]:-} "$commit"
+}
+export -f git.checkout
+
+#----------------------------------------------------------------------------------------------
+function git.clone()
+{
+    local -r repo=${1:?}
+    local -r dir=${2:-}
+    shift 2
+    local -r flags=( "$@" )
+
+    git clone ${flags[*]:-} -- "$repo" ${dir:-}
+}
+export -f git.clone
 
 #----------------------------------------------------------------------------------------------
 function git.commitAuthor()
@@ -72,32 +91,20 @@ function git.commitSummary()
 export -f git.commitSummary
 
 #----------------------------------------------------------------------------------------------
+function git.cryptUnlock()
+{
+    local -r key=${1:-}
+
+    git crypt unlock ${key:-}
+}
+export -f git.cryptUnlock
+
+#----------------------------------------------------------------------------------------------
 function git.HEAD()
 {
     git rev-parse HEAD
 }
 export -f git.HEAD
-
-#----------------------------------------------------------------------------------------------
-function git.isDevBuild()
-{
-    ! git.isMasterOrIntegrationBuild
-}
-export -f git.isDevBuild
-
-#----------------------------------------------------------------------------------------------
-#
-# Boolean: return true if the branch is master, integration, beta, or release
-#
-function git.isMasterOrIntegrationBuild()
-{
-    branch_type=$(git.specialBranchName)
-    return [ "$branch_type" == "master" ] ||
-           [ "$branch_type" == "release" ] ||
-           [ "$branch_type" == "integration" ] ||
-           [ "$branch_type" == "beta" ]
-}
-export -f git.isMasterOrIntegrationBuild
 
 #----------------------------------------------------------------------------------------------
 #
@@ -106,31 +113,49 @@ export -f git.isMasterOrIntegrationBuild
 #
 function git.isRepositoryFile()
 {
-    git ls-files $1 --error-unmatch &> /dev/null
+    git ls-files "$1" --error-unmatch &> /dev/null
 }
 export -f git.isRepositoryFile
 
 #----------------------------------------------------------------------------------------------
-# Boolean: is a special branch
-function git.isSpecialBranch()
+function git.lsRemote()
 {
-    local branch=$(git.branch)
-    [[ $branch == master ]] && return 0
-    [[ $branch =~ ^release($|/.*) ]] && return 0
-    [[ $branch =~ ^integration($|/.*) ]] && return 0
-    [[ $branch =~ ^hotfix($|/.*) ]] && return 0
-    [[ $branch == beta-next ]] && return 0
+    local -r branch=${1:?}
 
-    return 1
+    git ls-remote "$branch"
 }
-export -f git.isSpecialBranch
+export -f git.lsRemote
+
+#----------------------------------------------------------------------------------------------
+function git.lsTree()
+{
+    local -r tree_ish=${1:?}
+    local -r path=${2:?}
+    shift 2
+    local -r flags=( "$@" )
+
+    git ls-tree ${flags[*]:-} -- "$tree_ish" "$path"
+}
+export -f git.lsTree
 
 #----------------------------------------------------------------------------------------------
 function git.origin()
 {
+    local -r dir=${1:-.}
+
+    cd "$dir"
     git describe --tags --dirty --always
 }
 export -f git.origin
+
+#----------------------------------------------------------------------------------------------
+function git.pull()
+{
+    local -r flags=( "$@" )
+
+    git pull ${flags[*]:-}
+}
+export -f git.pull
 
 #----------------------------------------------------------------------------------------------
 function git.refs()
@@ -142,9 +167,19 @@ export -f git.refs
 #----------------------------------------------------------------------------------------------
 function git.remoteUrl()
 {
+#    git remote get-url origin
     git config --get remote.origin.url
 }
 export -f git.remoteUrl
+
+#----------------------------------------------------------------------------------------------
+function git.status()
+{
+    local -r flags=( "$@" )
+
+    git status ${flags[*]:-}
+}
+export -f git.status
 
 #----------------------------------------------------------------------------------------------
 function git.repoName()
@@ -152,29 +187,6 @@ function git.repoName()
     basename "$(git rev-parse --show-toplevel)"
 }
 export -f git.repoName
-
-#----------------------------------------------------------------------------------------------
-#
-# Return the branch prefix name, or "dev" if unknown
-#
-function git.specialBranchName()
-{
-    local branch=$(git.branch)
-   if [[ $branch == master* ]];  then
-        echo "master"
-    elif [[ $branch == release* ]]; then
-        echo "release"
-    elif [[ $branch == integration* ]]; then
-        echo "integration"
-    elif [[ $branch == hotfix* ]]; then
-        echo "hotfix"
-    elif [[ $branch == beta-next* ]]; then
-        echo "beta"
-    else
-        echo "dev"
-    fi
-}
-export -f git.specialBranchName
 
 #----------------------------------------------------------------------------------------------
 function git.toHTTPS()
@@ -202,3 +214,24 @@ function git.urlCommit()
     echo "$(git.url)/commit/$(git.HEAD)"
 }
 export -f git.urlCommit
+
+#----------------------------------------------------------------------------------------------
+function git.user()
+{
+    git config --get adsk.github.account 2>/dev/null || :
+}
+export -f git.user
+
+#----------------------------------------------------------------------------------------------
+function git.userEmail()
+{
+    git config --get user.name || :
+}
+export -f git.userEmail
+
+#----------------------------------------------------------------------------------------------
+function git.userName()
+{
+    git config --get user.email || :
+}
+export -f git.userName

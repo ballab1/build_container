@@ -20,7 +20,7 @@ function deploy.__initGlobals()
 
     # setup environment
 
-    export CONFIG_DIR="${base_dir}/config"
+    export CONFIG_DIR="${base_dir}"
     readonly CONFIG_DIR
 
 
@@ -34,11 +34,8 @@ function deploy.__initGlobals()
     readonly CONFIG_YAML
     [ -e "$CONFIG_YAML" ] || trap.die "Invalid configuration - no $CONFIG_YAML"
 
-    export VERSIONS_INFO="${CONFIG_DIR}/.versions"
-    readonly VERSIONS_INFO
 
-
-    export WORKSPACE_DIR="${base_dir}/workspace"
+    export WORKSPACE_DIR="$(deploy.workspace "$base_dir")"
     readonly WORKSPACE_DIR
     local -i file_count=0
     if [ -d "$WORKSPACE_DIR" ]; then
@@ -49,6 +46,9 @@ function deploy.__initGlobals()
     [ $file_count -gt 0 ] || deploy.showInitializationBanner
 
 
+    export VERSIONS_INFO="${CONFIG_DIR}/.versions"
+    readonly VERSIONS_INFO
+
     export LOG_DIR="${base_dir}/logs"
     readonly LOG_DIR
 
@@ -58,18 +58,16 @@ function deploy.__initGlobals()
     export CONTAINER_TAG="$container_tag"
 
     export CFG_USER
-    : ${CFG_USER:=$(git config --get adsk.github.account 2>/dev/null || :)}
+    : ${CFG_USER:=$(git.user)}
     : ${CFG_USER:=${USERNAME:-}}
     : ${CFG_USER:=${USER:-}}
+    CFG_USER="${CFG_USER%@*}"
     readonly CFG_USER
 
-    export CFG_GITHUB_EMAIL="$(git config --get user.email)"
-    readonly CFG_GITHUB_EMAIL
+    export CFG_NAME="${CFG_GITHUB_NAME:-$(git.userName)}"
+    readonly CFG_NAME
 
-    export CFG_GITHUB_NAME="$(git config --get user.name)"
-    readonly CFG_GITHUB_NAME
-
-    export CFG_EMAIL="${CFG_EMAIL:-$CFG_GITHUB_EMAIL}"
+    export CFG_EMAIL="${CFG_EMAIL:-$(git.userEmail)}"
     readonly CFG_EMAIL
 }
 export -f deploy.__initGlobals
@@ -79,9 +77,11 @@ function deploy.clean()
 {
     local -r workspace=${1:?}
 
-    local -i networks=$(docker network ls | grep "$(basename "${workspace}")_default" | wc -l ||:)
+    local network="$(basename "${workspace}")_default"
+    network="${network//./}"
+    local -i networks=$(docker network ls | grep "$network" | wc -l ||:)
     if [ $networks -gt 0 ]; then
-        mkdir -p $workspace ||:
+        mkdir -p "$workspace" ||:
         local -r dc_yaml="${workspace}/docker-compose.yml"
         sudo cp "${CONFIG_DIR}/docker-compose.yml" "$dc_yaml"
 
@@ -237,7 +237,7 @@ function deploy.main()
         esac
     done
 
-    local workspace="${base}/workspace"
+    local workspace="$(deploy.workspace "$base")"
     [ -z "${doClean:-}" ] || deploy.clean "$workspace"
     mkdir -p "$workspace" ||:
 
@@ -289,18 +289,18 @@ function deploy.populateSecrets()
     if [ -z "${CFG_USER_SECRETS:-}" ]; then
         [ "${OPEN_SECRETS_REPO:-}" ] || trap.die  "no definition provided for 'secrets'"
         mkdir -p "$(dirname "$secrets_dir")"
-        git clone "$OPEN_SECRETS_REPO" "$secrets_dir"
+        git.clone "$OPEN_SECRETS_REPO" "$secrets_dir"
 
     elif [ -d "${CFG_USER_SECRETS}" ] &&  [ "$(readlink -f "$CFG_USER_SECRETS")" != "$(readlink -f "$secrets_dir")" ]; then
         mkdir -p "$secrets_dir"
         cp "${CFG_USER_SECRETS}"/* "$secrets_dir"/
 
-    elif git ls-remote "${CFG_USER_SECRETS}" &> /dev/null ; then
+    elif git.lsRemote "${CFG_USER_SECRETS}" &> /dev/null ; then
         mkdir -p "$(dirname "$secrets_dir")"
-        git clone --quiet "$CFG_USER_SECRETS" "$secrets_dir"
+        git.clone "$CFG_USER_SECRETS" "$secrets_dir" --quiet
         if [ "$(grep -cH 'git-crypt' "${secrets_dir}/.gitattributes" 2>/dev/null | cut -d ':' -f2)" -gt 0 ]; then
             [ -e "${CRYPT_FILE:-}" ] || trap.die "secrets are encoded, but CRYPT_FILE: '${CRYPT_FILE:-}' does not exist"
-            (cd "$secrets_dir"; git crypt unlock "${CRYPT_FILE:-}" )
+            (cd "$secrets_dir"; git.cryptUnlock )
         fi
     else
         trap.die  "missing 'secrets' directory in workspace"
@@ -444,6 +444,9 @@ function deploy.updateDockerComposeYaml()
     local -r host_ip=${3:-$HOST_IP}
     local -r this_host=${4:-$HOST_NAME}
     local -r grafana_uid=${5:-$GRAFANA_UID}
+    local -r email=${6:-$CFG_EMAIL}
+    local -r user=${7:-$CFG_USER}
+    local -r github_name=${5:-$CFG_NAME}
 
     cp "${CONFIG_DIR}/skip.wait" "${WORKSPACE_DIR}/skip.wait"
 
@@ -465,12 +468,16 @@ function deploy.updateDockerComposeYaml()
     [ $(grep -cEH 'KAFKA_BROKER_ID:' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]   && term.log "    updating KAFKA_BROKER_ID to ${id}\n" 'grey'
     [ $(grep -cEH 'ZOOKEEPER_MY_ID:' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]   && term.log "    updating ZOOKEEPER_MY_ID to ${id}\n" 'grey'
     [ $(grep -cEH 'user:' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]              && term.log "    updating GRAFANA_UID to ${grafana_uid}\n" 'grey'
-    sed -i -r -e "s|255\.255\.255\.255|${host_ip}|g" \
-              -e "s|alpine|${CONTAINER_OS}|g" \
-              -e "s|(KAFKA_BROKER_ID: ).*\$|\1${id}|" \
-              -e "s|(ZOOKEEPER_MY_ID: ).*\$|\1${id}|" \
-              -e "s|user:\s+\"?1000\"?|user: \"${grafana_uid}\"|" \
+    sed -i -r -e 's|255.255.255.255|'"${host_ip}"'|g' \
+              -e 's|alpine|'"${CONTAINER_OS}"'|g' \
+              -e 's|(KAFKA_BROKER_ID: ).*$|\1'"${id}"'|' \
+              -e 's|(ZOOKEEPER_MY_ID: ).*$|\1'"${id}"'|' \
+              -e 's|user:\s+"?1000"?|user: "'"${grafana_uid}"'"|' \
              "$dc_yaml"
+    [ -z "${CFG_EMAIL:-}" ]       || sed -i -r -e 's|\$\{CFG_EMAIL:-\}|${CFG_EMAIL:-'"${email}"'}|g' "$dc_yaml"
+    [ -z "${CFG_NAME:-}" ] || sed -i -r -e 's|\$\{CFG_GITHUB_NAME:-\}|${CFG_GITHUB_NAME:-'"${github_name}"'}|g' "$dc_yaml"
+    [ -z "${CFG_USER:-}" ]        || sed -i -r -e 's|\$\{CFG_USER:-\}|${CFG_USER:-'"${user}"'}|g' "$dc_yaml"
+
 }
 export -f deploy.updateDockerComposeYaml
 
@@ -569,5 +576,13 @@ function deploy.waitForInitializationComplete()
     done
 }
 export -f deploy.waitForInitializationComplete
+
+#----------------------------------------------------------------------------------------------
+function deploy.workspace()
+{
+    local -r base_dir=${1:?}
+    echo "${base_dir}/workspace.$(basename "$base_dir")"
+}
+export -f deploy.workspace
 
 #----------------------------------------------------------------------------------------------

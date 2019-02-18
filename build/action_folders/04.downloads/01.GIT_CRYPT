@@ -1,10 +1,9 @@
 # Gradle
 
-declare -A GIT_CRYPT=(
-    ['version']=${GIT_CRYPT_VERSION:?}
-    ['dir']=/tmp/git-crypt-${GIT_CRYPT['version']}
-    ['file']="/tmp/git-crypt-${GIT_CRYPT['version']}.tar.gz"
-    ['url']="https://github.com/AGWA/git-crypt/archive/${GIT_CRYPT['version']}.tar.gz"
-    ['sha256_0.6.0']="777c0c7aadbbc758b69aff1339ca61697011ef7b92f1d1ee9518a8ee7702bb78"
-    ['sha256']="${GIT_CRYPT['sha256_'${GIT_CRYPT['version']}]}"
-)
+declare -A GIT_CRYPT=()
+GIT_CRYPT['version']=${GIT_CRYPT_VERSION:?}
+GIT_CRYPT['dir']=/tmp/git-crypt-${GIT_CRYPT['version']}
+GIT_CRYPT['file']="/tmp/git-crypt-${GIT_CRYPT['version']}.tar.gz"
+GIT_CRYPT['url']="https://github.com/AGWA/git-crypt/archive/${GIT_CRYPT['version']}.tar.gz"
+GIT_CRYPT['sha256_0.6.0']="777c0c7aadbbc758b69aff1339ca61697011ef7b92f1d1ee9518a8ee7702bb78"
+GIT_CRYPT['sha256']="${GIT_CRYPT['sha256_'${GIT_CRYPT['version']}]}"

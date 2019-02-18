@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# setup links to perl2.24.3 libs
+while read -r file; do
+    ln -s "$file" "/usr/lib64/$(basename "$file")"
+done < <(ls -1A /opt/rh/rh-perl524/root/usr/lib64/lib*)

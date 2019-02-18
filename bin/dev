@@ -2,6 +2,7 @@
 
 function cleanup()
 {
+    [ -s ~/.crypt-key ] || [ -e ~/.crypt-key ] && rm ~/.crypt-key
     [ -e ~/."${svc}.vars" ] && rm ~/."${svc}.vars"
     # clean up containers
     local -a containers
@@ -16,7 +17,7 @@ declare svc="$(basename "${BASH_SOURCE[0]}")"
 cleanup
 
 # ensure we have latest version of container
-docker pull ubuntu-s2:5000/alpine/build_container:latest
+[ "${TEST:-}" ] || docker pull ubuntu-s2:5000/alpine/build_container:latest
 [ ${1:-} ] || exit 0
 
 # setup environment vars about host as well as conditional vars
@@ -29,12 +30,14 @@ EOF
 
 export BUILDER_UID=$(getent passwd $EUID | cut -d: -f3)
 export BUILDER_GID=$(getent passwd $EUID | cut -d: -f4)
+[ -f ~/.crypt-key  ] || touch ~/.crypt-key
 
 # run our command
 docker-compose \
            --file "${dir}/${svc}.yml" \
            run --rm \
                --user "${BUILDER_UID}:$BUILDER_GID" \
+               --name builder \
            "$svc" build_container "$@"
 
 cleanup

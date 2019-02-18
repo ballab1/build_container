@@ -1,7 +1,8 @@
 #!/bin/bash
 
-declare -ar env_dc=(
+declare -ar env_builder=(
     'USER=builder'
+    'HOME=/home/builder'
     'WORKDIR=/opt'
     'DOCKER_USER=${DOCKER_USER:-docker}'
     'DOCKER_GROUP=${DOCKER_GROUP:-docker}'
@@ -12,5 +13,5 @@ declare -ar env_dc=(
 #remove WORKDIR
 crf.removeFromRuntimeEnvironment 'USER'
 crf.removeFromRuntimeEnvironment 'WORKDIR'
-crf.updateRuntimeEnvironment "${env_dc[@]}" 
+crf.updateRuntimeEnvironment "${env_builder[@]}" 
 

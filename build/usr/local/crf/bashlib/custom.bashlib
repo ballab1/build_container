@@ -3,7 +3,7 @@
 #----------------------------------------------------------------------------------------------
 function custom.cbfVersion()
 {
-    (cd container_build_framework; git rev-parse HEAD)
+    (cd container_build_framework; git.HEAD)
 }
 export -f custom.cbfVersion
 

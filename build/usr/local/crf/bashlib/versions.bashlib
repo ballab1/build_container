@@ -35,27 +35,25 @@ function versions.data()
     local -r versions_dir="$(versions.DIR)"
     if [ ! -d "$versions_dir" ]; then
         mkdir -p "$(dirname "$versions_dir")" || trap.die 'no version information available'
-        git clone --quiet "$(versions.REPO)" "$versions_dir"
+        git.clone "$(versions.REPO)" "$versions_dir"  --quiet
     fi
 
     # ensure version info is up-to-date
     if [ "${commit,,:-}" != 'latest' ]; then
         ( cd "$versions_dir"
-          if ! git checkout --quiet "$(versions.COMMIT)" ; then
+          if ! git.checkout "$(versions.COMMIT)" --quiet ; then
               cd ..
               rm -rf "$versions_dir"
-              git clone --no-checkout "$(versions.REPO)" "$versions_dir"
+              git.clone "$(versions.REPO)" "$versions_dir" --no-checkout
               cd "$versions_dir"
-              git checkout --quiet "$(versions.COMMIT)"
+              git.checkout "$(versions.COMMIT)" --quiet
           fi
         )
         return 0
     fi
 
-    commit=$(cd "$versions_dir"; git checkout master &>/dev/null; git pull --quiet &>/dev/null; git rev-parse HEAD)
-    if [ "$commit" != $(versions.COMMIT) ]; then
-        lib.updatePropertyFile 'COMMIT' "$commit" "$VERSIONS_INFO_FILE" 'force'
-    fi
+    commit=$(cd "$versions_dir"; git.checkout 'master' &>/dev/null; git.pull --quiet; git.HEAD)
+    [ "$commit" = $(versions.COMMIT) ] || lib.updatePropertyFile 'COMMIT' "$commit" "$VERSIONS_INFO_FILE" force
 }
 export -f versions.data
 

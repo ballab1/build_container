@@ -1,0 +1,6 @@
+# core Packages
+
+declare -a PKGS=( gcc-c++ 
+                  openssl-devel
+                  sudo
+                  zip ) 

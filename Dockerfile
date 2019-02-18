@@ -21,6 +21,8 @@ LABEL version.fixuid=$FIXUID_VERSION
 ARG GIT_CRYPT_VERSION=0.6.0
 LABEL version.git_crypt=$GIT_CRYPT_VERSION 
 
+ARG BUILDER_HOME=/home/builder
+
 # build content
 RUN set -o verbose \
     && chmod u+rwx /tmp/build.sh \

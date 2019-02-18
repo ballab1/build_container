@@ -14,4 +14,4 @@ group: builder
 EOF
 
 sed -i -e '2 a\
-fixuid' /usr/local/bin/docker-entrypoint.sh
+/usr/local/bin/fixuid' /usr/local/bin/docker-entrypoint.sh

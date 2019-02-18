@@ -33,14 +33,34 @@ export -f registry.credentials
 function registry.createTime()
 {
     local -r name=${1:?}
-    local -r tag=${2:?}
+    local -r digest=${2:?}
+    shift 2
+    local -ra tags=( "$@" )
 
-    local -r manifests="$(registry.manifest "$name" "$tag" )"
-    if [ -z "$manifests" ] || [[ $manifests =~ MANIFEST_INVALID ]]; then
-        echo '                      '
-    else
-        (jq -r '[ .history[].v1Compatibility|fromjson.created | sub("\\.\\d+Z"; "Z") | fromdate] | max | todate' ) <<< "$manifests"
+    local -r manifests="$(registry.manifest "$name" "${tags[0]}")"
+    if [ "$manifests" ] && [[ ! $manifests =~ MANIFEST_INVALID ]]; then
+        local createTime=$(jq -r 'try [ .history[].v1Compatibility|fromjson.created | sub("\\.\\d+Z"; "Z") | fromdate] | max | todate' <<< "$manifests")
+        if [ "$createTime" ]; then
+            echo "$createTime"
+            return 0
+        fi
     fi
+
+    {
+    echo -en '    \e[93m'
+    echo "unable to parse time from manifest returned for $name:${tags[0]}"
+    echo "        digest: $digest"
+    if [ "${#tags[*]}" -gt 1 ]; then
+        echo '        other tags: '"${tags[1]}"
+        local -i i=2
+        while [ $i -lt "${#tags[*]}" ]; do
+            echo '                    '"${tags[$i]}"
+        done
+    fi
+    echo "    recommend verifying that this image can be downloaded using 'docker pull $name:${tags[0]}'"
+    echo '    if this image cannot be downloaded, it should be deleted from the repository'
+    echo -e '\e[0m'
+    } >&2
 }
 export -f registry.createTime
 
@@ -92,7 +112,6 @@ function registry.deleteImage()
     local -r name=${1:?}
     local -r digest=${2:?}
 
-    [ "$digest" ] || trap.die 'invalid digest passed to registry.delete'
     echo -n "deleting ${name} - $digest  "
     registry.DELETE --silent --show-error --write-out '%{http_code}\n' "$(registry.URL)/${name}/manifests/$digest" || echo "Failed to delete $name:$digest"
 #    echo "http_code: ${http_code:-}"
@@ -167,11 +186,12 @@ function registry.digests()
         digests["$digest"]="$(echo -en "${tag}\n${digests[$digest]:-}")"
     done
 
+
     local -A times=()
     for digest in "${!digests[@]}"; do
         tags=( ${digests[$digest]} )
-        createTime="$(registry.createTime "$name" "${tags[0]}" )"
-        [ "$createTime" != '                      ' ] || createTime='null'
+        createTime="$(registry.createTime "$name" "$digest" "${tags[@]}" )"
+        [ "${createTime:-}" ] || continue
         [ "${times[$createTime]:-}" ] || times[$createTime]="$digest"
     done
 
@@ -366,7 +386,8 @@ function registry.pushImage()
 
     local -ir imageCount=$(jq '.|length' <<< "$digests")
     if [ $imageCount -ge $maxImages ]; then
-        local -ir delta=$(( maxImages - imageCount + 1 ))
+        local -ir delta=$(( imageCount - maxImages + 1 ))
+        [ $delta -le 1 ] || echo -e "    \e[93mrepo ${name} contains ${delta} images over recommended limit\e[0m"
         local -a oldImages
         mapfile -t oldImages < <(jq -r "[.[]|select((.tags|length) == 1)]|sort_by(.createTime|fromdate)|.[0:${delta}]|.[].digest" <<< "$digests")
         if [ "${#oldImages[*]}" -gt 0 ]; then

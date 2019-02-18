@@ -17,13 +17,13 @@ set -o pipefail
 IFS=$'\n\t'
 
 #declare -r FORCE_COLOR=1
-declare -i IS_VERBOSE=0 IS_SUMMARY=1 IS_LABELS=0 IS_LAYERS=1 IS_REPORT=1
+declare -i IS_LABELS=0 IS_LAYERS=0 IS_REPORT=1 IS_VERBOSE=0
 
 
 set -o noglob
 [ -e ~/bin/trap.bashlib ] && source ~/bin/trap.bashlib
 
-declare -A CONTAINERS CONTAINERS_REF IMAGES IMAGE_PARENTS IMAGE_REF MATCHED_CONTAINER_IDS NAMED_IMAGES SPECIFIED_IMAGE_DEPENDENCIES
+declare -A CONTAINERS CONTAINERS_REF IMAGES IMAGE_LAYERS IMAGE_REF MATCHED_CONTAINER_IDS NAMED_IMAGES SPECIFIED_IMAGE_DEPENDENCIES
 declare -a PARENT_IMAGE_IDS SPECIFIED_IMAGE_IDS SPECIFIED_DOCKER_REFS
 
 
@@ -39,8 +39,8 @@ Usage:
     Common options:
         -h --help              Display a basic set of usage instructions
         -l --labels            Display labels - hide by default
+           --labels            Display layers - hide by default
         -r --report            Display report
-        -s --summary           Display summary about progress, containers and images
         -v --verbose           Display more info about progress, containers and images
 
 Project: https://eos2git.cec.lab.emc.com/cyclonecommon/devops-scripts
@@ -57,7 +57,7 @@ function argsParser()
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
-    local -r longopts='help,Help,HELP,labels,report,summary,verbose'
+    local -r longopts='help,Help,HELP,labels,layers,report,summary,verbose'
     local -r shortopts='Hhlrsv'
     local -r options=$(getopt --longoptions "${longopts}" --options "${shortopts}" --name "$progname" -- "${args[@]}") || usage $?
     eval set -- "$options"
@@ -67,12 +67,13 @@ function argsParser()
             -h|--h|--help|-help)        usage 0;;
             -H|--H|--HELP|-HELP)        usage 0;;
                    --Help|-Help)        usage 0;;
-            -l|--l|--labels)            IS_LABELS=1;                    shift 2;;
-            -r|--r|--report)            IS_REPORT=1;                    shift 2;;
-            -s|--s|--summary)           IS_SUMMARY=1;                   shift 2;;
-            -v|--v|--verbose)           IS_VERBOSE=1;                   shift 2;;
-            --)                         shift; SPECIFIED_DOCKER_REFS+=( "$@" ); break;; 
-            *)                          SPECIFIED_DOCKER_REFS+=( "$1" ); shift;;
+                   --layers)            [ ${IS_LAYERS:-0} == 0 ] && IS_LAYERS=1 || IS_LAYERS=0;     shift 2;;
+            -l|--l|--labels)            [ ${IS_LABELS:-0} == 0 ] && IS_LABELS=1 || IS_LABELS=0;     shift 2;;
+            -r|--r|--report)            [ ${IS_REPORT:-0} == 0 ] && IS_REPORT=1 || IS_REPORT=0;     shift 2;;
+            -s|--s|--summary)           [ ${IS_VERBOSE:-0} == 0 ] && IS_VERBOSE=1 || IS_VERBOSE=0;  shift 2;;
+            -v|--v|--verbose)           [ ${IS_VERBOSE:-0} == 0 ] && IS_VERBOSE=1 || IS_VERBOSE=0;  shift 2;;
+            --)                         shift; SPECIFIED_DOCKER_REFS+=( "$@" );                     break;; 
+            *)                          SPECIFIED_DOCKER_REFS+=( "$1" );                            shift;;
         esac
     done
 }
@@ -174,7 +175,7 @@ function dependantsOf()
                 dependentImages+=( $dependant )
             fi
         done
-        [ ${#dependentImages[*]} -gt 0 ] || return
+        [ ${#dependentImages[*]} -gt 0 ] || return 0
 
         for dependant in "${dependentImages[@]}"; do
             while [ "${dependentLayers[$dependant]:-}" ]; do
@@ -251,7 +252,7 @@ function getAllImages()
             props=( ${MATCHED_CONTAINER_IDS[$name]} )
             image="${props[1]:-}"
             [ "${image:-}" ] || continue
-            echo "${NAMED_IMAGES[$image]}"
+            [ -z "${NAMED_IMAGES[$image]:-}" ] || echo "${NAMED_IMAGES[$image]}"
         done
     fi
 }
@@ -263,8 +264,8 @@ function getDependentImages()
     local imageId=${1:?"Input parameter 'imageId' must be passed to 'function ${FUNCNAME[0]}()'"}
 
     local parent
-    for parent in "${!IMAGE_PARENTS[@]}"; do
-        [ "$imageId" != "${IMAGE_PARENTS[$parent]}" ] || printf '%s\n' "$parent"
+    for parent in "${!IMAGE_LAYERS[@]}"; do
+        [ "$imageId" != "${IMAGE_LAYERS[$parent]}" ] || printf '%s\n' "$parent"
     done
 }
 
@@ -303,6 +304,8 @@ function populateSpecifiedImageDependencies()
 #------------------------------------------------------------------------------------------
 function reportDependentImages()
 {
+    [ $IS_VERBOSE -ne 0 ] || return 0
+
     local image
     local -i dependants=0
     for image in "${!SPECIFIED_IMAGE_DEPENDENCIES[@]}"; do
@@ -315,9 +318,10 @@ function reportDependentImages()
 #------------------------------------------------------------------------------------------
 function reportDistinctImages()
 {
+    [ $IS_VERBOSE -ne 0 ] || return 0
+
     verbose "    Detected ${#SPECIFIED_IMAGE_IDS[*]} distinct images dependent on specified images"
     [ ${#SPECIFIED_IMAGE_IDS[*]} -gt 0 ] || return 0
-    [ $IS_SUMMARY -gt 0 ] || return 0
 
     local image
     echo -n '      '
@@ -330,9 +334,10 @@ function reportDistinctImages()
 #------------------------------------------------------------------------------------------
 function reportMatchingContainers()
 {
+    [ $IS_VERBOSE -ne 0 ] || return 0
+
     verbose "    Found ${#MATCHED_CONTAINER_IDS[*]} matching containers"
     [ ${#MATCHED_CONTAINER_IDS[*]} -gt 0 ] || return 0
-    [ $IS_SUMMARY -gt 0 ] || return 0
 
     local name
     echo -n '       '
@@ -388,8 +393,9 @@ function showImages()
     echo
     local imageId
     for imageId in "${SPECIFIED_IMAGE_IDS[@]}"; do
-        showImageLayers "$imageId"
         showImageDependents "$imageId"
+        showImageLayers "$imageId"
+        echo
     done
 }
 
@@ -406,7 +412,6 @@ function showImageDependents()
     dependants_found=( $(dependantsOf "$imageId") )
     if [ -z ${refImage:-} ] || [ ${#dependants_found[*]} -eq 0 ]; then
         echo -n 'No dependencies found for '; colorEcho 'GREEN' "$refImage\\n"
-        echo
         return 0
     fi
 
@@ -429,7 +434,6 @@ function showImageDependents()
             showImageInfo "$dependant" "$refImage"
         done
     fi
-    echo
 }
 
 #------------------------------------------------------------------------------------------
@@ -453,7 +457,6 @@ function showImageLayers()
 {
     local image=${1:?"Input parameter 'image' must be passed to 'function ${FUNCNAME[0]}()'"}
 
-
     local -i imageCount namedImageCount
     local id="$image"   
     image="${IMAGES[$id]:-}"
@@ -463,19 +466,19 @@ function showImageLayers()
     imageCount=0
     namedImageCount=0
     colorEcho 'YELLOW' 'Layers'; echo -en ' contained in '; colorEcho 'GREEN' "$image\\n"
+
     
     while [ "$id" ]; do
         if [ "${IMAGES[$id]}" = '<none>:<none>' ]; then
-            [ $IS_VERBOSE -eq 0 ] || verbose "    $(echoSHA256 "$id")"
+            [ $IS_LAYERS -eq 0 ] || (echo -n '    ' ; echoSHA256 "$id\\n")
         else
             (( ++namedImageCount )) || :
-            echo -en '    '; echoSHA256 "$id "
+            echo -n '    '; echoSHA256 "$id "
             echoImage "${IMAGES[$id]}\\n" "$image\\n"
-            [ $IS_LABELS -eq 0 ] || showLabels "$id"
-            [ "${IMAGES[$id]}" != "$image" ] || showLabels "$id"
+            [ $IS_LABELS -eq 0 ] && [ "${IMAGES[$id]}" != "$image" ] || showLabels "$id"
         fi
         (( ++imageCount )) || :
-        id="${IMAGE_PARENTS[$id]:-}"
+        id="${IMAGE_LAYERS[$id]:-}"
     done
 
     echo -n '    '
@@ -525,7 +528,7 @@ function showReport()
 #------------------------------------------------------------------------------------------
 function verbose()
 {
-    [ $IS_VERBOSE -eq 0 ] && [ $IS_SUMMARY -eq 0 ] && return
+    [ $IS_VERBOSE -ne 0 ] || return 0
     if [ $# -gt 0 ]; then
         echo -en "$*\n"  >&2
     else
@@ -553,7 +556,7 @@ verbose "Searching for information on: $(printf ' %s' "${SPECIFIED_DOCKER_REFS[*
 
 # Populate the image info hash
 eval "IMAGES=( $(docker images --all --format '[{{.ID}}]="{{.Repository}}:{{.Tag}}"' --no-trunc) )"
-verbose "    Detected ${#IMAGES[*]} images"
+verbose "    Detected ${#IMAGES[*]} images/layers"
 
 # Populate the named image info hash
 NAMED_IMAGES=()
@@ -584,13 +587,13 @@ verbose "    Detected ${#PARENT_IMAGE_IDS[*]} images associated with specified r
 
 
 # find the parent ids of all images
-eval "IMAGE_PARENTS=( $(dockerImageParents) )"
-verbose "    Retrieved ${#IMAGE_PARENTS[*]} parent images"
+eval "IMAGE_LAYERS=( $(dockerImageParents) )"
+verbose "    Retrieved ${#IMAGE_LAYERS[*]} parented layers"
 
 
 
 # Deduplicate parent image ids & matched container ids
-mapfile -t SPECIFIED_IMAGE_IDS < <(getAllImages | LC_ALL=C sort -u)
+mapfile -t SPECIFIED_IMAGE_IDS < <(getAllImages | LC_ALL=C sort -u ||:)
 reportDistinctImages
 
 
