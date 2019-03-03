@@ -225,13 +225,13 @@ export -f git.user
 #----------------------------------------------------------------------------------------------
 function git.userEmail()
 {
-    git config --get user.name || :
+    git config --get user.email || :
 }
 export -f git.userEmail
 
 #----------------------------------------------------------------------------------------------
 function git.userName()
 {
-    git config --get user.email || :
+    git config --get user.name || :
 }
 export -f git.userName

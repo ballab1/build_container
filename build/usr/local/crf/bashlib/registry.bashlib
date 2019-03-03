@@ -15,21 +15,6 @@ function registry.catalog()
 export -f registry.catalog
 
 #----------------------------------------------------------------------------------------------
-function registry.credentials()
-{
-    if [ "${_REGISTRY_CREDENTIALS:-}" ]; then
-        echo "${_REGISTRY_CREDENTIALS:=${user}:$password}"
-    else
-        local -r user="${1:-${USERNAME:-$USER}}"
-        local  password="${!user:-}"
-        [ "${password:-}" ] || password="$(lib.getProperty "$user" "$( registry.secretsFile )")"
-
-        echo "${_REGISTRY_CREDENTIALS:=${user}:$password}"
-    fi
-}
-export -f registry.credentials
-
-#----------------------------------------------------------------------------------------------
 function registry.createTime()
 {
     local -r name=${1:?}
@@ -232,10 +217,11 @@ export -f registry.GET
 #----------------------------------------------------------------------------------------------
 function registry.io()
 {
-    local -r response=$(custom.io "$@")
+    local -ra credentials=( $(custom.credentials registry) )
+    local response=$(curl "${credentials[@]}" "$@")
 
     # strip http_code
-    if grep '--write-out' <<<"$*" &>/dev/null ;then
+    if grep '\-\-write-out' <<<"$*" &>/dev/null ;then
         http_code="${response##*\}}"
         response="${response%\}*}"'}'
     fi

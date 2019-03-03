@@ -8,8 +8,8 @@ function custom.cbfVersion()
 export -f custom.cbfVersion
 
 #----------------------------------------------------------------------------------------------
-function custom.io()
+function custom.credentials()
 {
-    curl --insecure "$@"
+    echo '--insecure'
 }
-export -f custom.io
+export -f custom.credentials

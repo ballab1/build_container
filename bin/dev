@@ -17,7 +17,7 @@ declare svc="$(basename "${BASH_SOURCE[0]}")"
 cleanup
 
 # ensure we have latest version of container
-[ "${TEST:-}" ] || docker pull ubuntu-s2:5000/alpine/build_container:latest
+[ "${TEST:-}" ] || docker pull ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/build_container:${CONTAINER_TAG:-latest}
 [ ${1:-} ] || exit 0
 
 # setup environment vars about host as well as conditional vars
@@ -32,12 +32,16 @@ export BUILDER_UID=$(getent passwd $EUID | cut -d: -f3)
 export BUILDER_GID=$(getent passwd $EUID | cut -d: -f4)
 [ -f ~/.crypt-key  ] || touch ~/.crypt-key
 
+# apply inspection of workspace to determine command when nothing supplied
+declare -a args=( "$@" )
+#[ "${#args[*]}" -gt 0 ] || args=( 'deduce_command_from_workspace' )
+
 # run our command
 docker-compose \
            --file "${dir}/${svc}.yml" \
            run --rm \
                --user "${BUILDER_UID}:$BUILDER_GID" \
                --name builder \
-           "$svc" build_container "$@"
+           "$svc" build_container "${args[@]}"
 
 cleanup

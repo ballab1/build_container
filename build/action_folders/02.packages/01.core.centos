@@ -1,6 +1,7 @@
 # core Packages
 
-declare -a PKGS=( gcc-c++ 
+declare -a PKGS=( gcc-c++
+                  docker
                   openssl-devel
                   sudo
                   zip ) 

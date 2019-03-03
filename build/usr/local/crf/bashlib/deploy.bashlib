@@ -356,7 +356,12 @@ function deploy.restart()
 
 
     # restart our environment
-    deploy.restartContainers "$dc_yaml"
+    if ! deploy.restartContainers "$dc_yaml" ; then
+        echo -en '\e[97m'
+        echo -n "Failed to succussfully deploy container services."
+        echo -e '\e[0m'
+        exit 1
+    fi
 
     local -r run_log="${WORKSPACE_DIR}/run.log"
     deploy.waitForInitializationComplete "$dc_yaml" "$run_log"
@@ -389,11 +394,13 @@ function deploy.restartContainers()
     deploy.refreshContainers "$dc_yaml" && status=$? || status=$?
     [ $status -eq 0 ] || return $status
 
+    local -i status
     echo -en '\e[97m'
     echo -n 'INFO: bringing up containers'
     echo -e '\e[0m'
     echo " docker-compose --file $dc_yaml up --detach"
-    docker-compose --file "$dc_yaml" up -d   # docker-compose v1.17.0 does not like '--detach'!
+    # docker-compose v1.17.0 does not like '--detach'!
+    docker-compose --file "$dc_yaml" up -d  && status=$? || status=$?
 
     # fixup docker-compose.yml to reflect the image versions in use
     if [ "${CONTAINER_TAG:-}" = 'latest' ]; then
@@ -401,6 +408,7 @@ function deploy.restartContainers()
         deploy.updateContainerReference "$CONFIG_YAML"
         deploy.updateContainerReference "$dc_yaml"
     fi
+    return $status
 }
 export -f deploy.restartContainers
 

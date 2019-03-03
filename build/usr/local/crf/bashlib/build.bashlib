@@ -13,7 +13,7 @@ function build.all()
 
     local -r allStartTime=$(timer.getTimestamp)
     cd "$top"
-    local logDir="${top}/logs"
+    local logDir="$(readlink -f "$top")/logs"
     [ -d "$logDir" ] || mkdir -p "$logDir"
 
     local updateTo
@@ -28,11 +28,12 @@ function build.all()
     local cbf_version="${CBF_VERSION:-}"
     if [ -z "${CBF_VERSION:-}" ]; then
         if [ -d "${top}/container_build_framework" ]; then
-            cbf_version="$(build.cbfVersion)"
+            cbf_version="$(build.cbfVersion)" || trap.die "Unable to save CBF to Artifactory."'\n'
         else
             cbf_version='master'
         fi
     fi
+
     echo "Container Build Framework version: $cbf_version"
     echo "kafka servers:  ${KAFKA_BOOTSTRAP_SERVERS:-}"
     echo
@@ -475,14 +476,14 @@ function build.module()
         # this on Jenkins
         :> "$PROGRESS_LOG"
         local logBase="${logDir}/$dir"
-        (build.updateContainer "$compose_yaml" "$taggedImage" "$actualImage" "$CONTAINER_ORIGIN" >"../${logBase}.out" 2>"../${logBase}.err") \
+        (build.updateContainer "$compose_yaml" "$taggedImage" "$actualImage" "$CONTAINER_ORIGIN" >"${logBase}.out" 2>"${logBase}.err") \
           && status=$? || status=$?
-        [ $status -eq 9 ] && rm "../${logBase}.out"
+        [ $status -eq 9 ] && rm "${logBase}.out"
 
         # show location of log files if they have any content
         local log_display_base="${BUILD_URL}artifact/$logBase"
-        [ -s "../${logBase}.out" ] && echo "    STDOUT log:  ${log_display_base}.out/*view*/"
-        [ -s "../${logBase}.err" ] && echo "    STDERR log:  ${log_display_base}.err/*view*/"
+        [ -s "${logBase}.out" ] && echo "    STDOUT log:  ${log_display_base}.out/*view*/"
+        [ -s "${logBase}.err" ] && echo "    STDERR log:  ${log_display_base}.err/*view*/"
 
         if [ $status -ne 0 ] && [ $status -ne 9 ]; then
           term.log "\n"
@@ -492,13 +493,13 @@ function build.module()
           echo
           echo  'STDOUT:'
           echo
-          tail -30 ../${logBase}.out
+          tail -30 ${logBase}.out
           echo
           echo '----------------------------------------------------------------------------------------------'
           echo
           echo  'STDERR:'
           echo
-          tail -30 ../${logBase}.err
+          tail -30 ${logBase}.err
           echo
           echo '----------------------------------------------------------------------------------------------'
         fi
@@ -652,8 +653,9 @@ export -f build.verifyModules
 function build.wrapper()
 {
     if [ -z "${BUILD_URL:-}" ]; then
-        echo 'build.all "$@" 2>&1 | tee /opt/bld.log'
-        build.all "$@" 2>&1 | tee /opt/bld.log ||:
+        local logFile="$(pwd)/bld.log"
+        echo 'build.all "$@" 2>&1 | tee '"$logFile"
+        build.all "$@" 2>&1 | tee "$logFile" ||:
     else
         echo 'build.all "$@"'
         build.all "$@"
