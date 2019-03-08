@@ -1,0 +1,11 @@
+# build Packages
+
+#declare -a OPTS=( '.buildDependencies' ) 
+
+declare -a PKGS=(build-base
+                 expat-devel
+                 file
+                 gcc-objc
+                 git
+                 gnutls-utils
+                 libtool )

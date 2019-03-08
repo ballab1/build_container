@@ -1,0 +1,17 @@
+#!/bin/bash
+
+: ${FIXUID_VERSION:?"Environment variable 'FIXUID_VERSION' not defined in '${BASH_SOURCE[0]}'"}
+
+tar -C /usr/local/bin -xzf "${FIXUID['file']}"
+
+chown root:root /usr/local/bin/fixuid
+chmod 4755 /usr/local/bin/fixuid
+
+mkdir -p /etc/fixuid
+cat <<EOF > /etc/fixuid/config.yml
+user: builder
+group: builder
+EOF
+
+sed -i -e '2 a\
+/usr/local/bin/fixuid' /usr/local/bin/docker-entrypoint.sh

@@ -1,0 +1,8 @@
+# fixuid
+
+declare -A FIXUID=()
+FIXUID['version']=${FIXUID_VERSION:?}
+FIXUID['file']="/tmp/fixuid-${FIXUID['version']}-linux-amd64.tar.gz"
+FIXUID['url']="https://github.com/boxboat/fixuid/releases/download/v${FIXUID['version']}/fixuid-${FIXUID['version']}-linux-amd64.tar.gz"
+FIXUID['sha256_0.4']="d4555f5ba21298819af24ed351851a173fff02b9c0bd5dfcef32f7e22ef06401"
+FIXUID['sha256']="${FIXUID['sha256_'${FIXUID['version']}]}"

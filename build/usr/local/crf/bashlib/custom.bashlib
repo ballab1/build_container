@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#----------------------------------------------------------------------------------------------
+function custom.cbfVersion()
+{
+    (cd container_build_framework; git.HEAD)
+}
+export -f custom.cbfVersion
+
+#----------------------------------------------------------------------------------------------
+function custom.credentials()
+{
+    echo '--insecure'
+}
+export -f custom.credentials

@@ -1,0 +1,17 @@
+#!/bin/bash
+
+declare -ar env_builder=(
+    'USER=builder'
+    'HOME=/home/builder'
+    'WORKDIR=/opt'
+    'DOCKER_USER=${DOCKER_USER:-docker}'
+    'DOCKER_GROUP=${DOCKER_GROUP:-docker}'
+    'DOCKER_UID=${DOCKER_UID:-$(docker.UID "${DOCKER_USER:-}")}'
+    'DOCKER_GID=${DOCKER_GID:-$(docker.GID "${DOCKER_GROUP:-}")}'
+)
+
+#remove WORKDIR
+crf.removeFromRuntimeEnvironment 'USER'
+crf.removeFromRuntimeEnvironment 'WORKDIR'
+crf.updateRuntimeEnvironment "${env_builder[@]}" 
+

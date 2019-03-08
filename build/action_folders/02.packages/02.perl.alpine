@@ -1,0 +1,7 @@
+# perl Packages
+
+declare -a PKGS=( libxml2
+                  openssl-dev
+                  perl
+                  perl-dev
+                  perl-utils )

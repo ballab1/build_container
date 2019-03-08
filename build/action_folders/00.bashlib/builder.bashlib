@@ -1,0 +1,21 @@
+#!/bin/bash
+#############################################################################
+
+function builder.UID()
+{
+    local -r user_name="${1:-builder}"
+    local -r default_uid=${2:-${BUILDER_UID:-1000}}
+
+    lib.lookupId "$user_name" 'passwd' "$default_uid"
+}
+export -f builder.UID
+
+#############################################################################
+function builder.GID()
+{
+    local -r group_name="${1:-builder}"
+    local -r default_gid=${2:-${BUILDER_GID:-1000}}
+
+    lib.lookupId "$group_name" 'group' "$default_gid"
+}
+export -f builder.GID

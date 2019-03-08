@@ -1,0 +1,23 @@
+# build Packages
+
+#declare -a OPTS=( '--virtual' '.buildDependencies' )
+declare -a PKGS=( alpine-sdk
+                  build-base
+                  expat-dev
+                  file
+                  g++
+                  gcc
+                  gcc-objc
+                  gd
+                  gnutls-utils
+                  jpeg
+                  libc6-compat
+                  libtool
+                  libxml2-dev
+                  linux-headers
+                  make
+                  mysql
+                  perl-plack
+                  'py-pip==10.0.1-r0'
+                  python2-dev
+                  rsync )

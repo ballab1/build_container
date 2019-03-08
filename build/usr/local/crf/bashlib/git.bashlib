@@ -1,0 +1,237 @@
+#!/bin/bash
+
+##################################################################################
+#
+#  general 'git' scripts
+#
+##################################################################################
+
+#----------------------------------------------------------------------------------------------
+function git.branch()
+{
+    git rev-parse --abbrev-ref HEAD
+}
+export -f git.branch
+
+#----------------------------------------------------------------------------------------------
+function git.branchOrTagName()
+{
+    # Checking if we are currently on a branch or tag
+    # If we are on a tag then "git branch" outputs "* (detached from <tag_name>)"
+    # otherwise outputs "* <branch_name>"
+    local gb="$(git branch)"
+    local checkBranchOrTag="$(grep '\* (detached' <<< "$gb")"
+
+    # If the value is null then it is branch so the conditional search needs to be for a branch
+    # otherwise for a tag. Defaulting the conditional search for a branch as that is the usual case
+    if [ -z "${checkBranchOrTag:-}" ]; then
+        grep \*  <<< "$gb" | cut -d ' ' -f2
+    else
+        grep \*  <<< "$gb" | cut -d ' ' -f4 | tr -d ')'
+    fi
+}
+export -f git.branchOrTagName
+
+#----------------------------------------------------------------------------------------------
+function git.checkout()
+{
+    local -r commit=${1:?}
+    shift
+    local -r flags=( "$@" )
+
+    git checkout ${flags[*]:-} "$commit"
+}
+export -f git.checkout
+
+#----------------------------------------------------------------------------------------------
+function git.clone()
+{
+    local -r repo=${1:?}
+    local -r dir=${2:-}
+    shift 2
+    local -r flags=( "$@" )
+
+    git clone ${flags[*]:-} -- "$repo" ${dir:-}
+}
+export -f git.clone
+
+#----------------------------------------------------------------------------------------------
+function git.commitAuthor()
+{
+    git log -1 --pretty=format:"%an"
+}
+export -f git.commitAuthor
+
+#----------------------------------------------------------------------------------------------
+function git.commitDate()
+{
+    git log -1 --pretty=format:"%cd"
+}
+export -f git.commitDate
+
+#----------------------------------------------------------------------------------------------
+function git.commitEmail()
+{
+    git log -1 --pretty=format:"%ce"
+}
+export -f git.commitEmail
+
+#----------------------------------------------------------------------------------------------
+function git.commitEpoch()
+{
+    git log -1 --pretty=format:"%ct"
+}
+export -f git.commitEpoch
+
+#----------------------------------------------------------------------------------------------
+function git.commitSummary()
+{
+    git log -1 --pretty=format:"%s"
+}
+export -f git.commitSummary
+
+#----------------------------------------------------------------------------------------------
+function git.cryptUnlock()
+{
+    local -r key=${1:-}
+
+    git crypt unlock ${key:-}
+}
+export -f git.cryptUnlock
+
+#----------------------------------------------------------------------------------------------
+function git.HEAD()
+{
+    git rev-parse HEAD
+}
+export -f git.HEAD
+
+#----------------------------------------------------------------------------------------------
+#
+# Returns true if the argument passed in is a repository managed file
+# if git.isRepositoryFile "project.version" echo "yes"
+#
+function git.isRepositoryFile()
+{
+    git ls-files "$1" --error-unmatch &> /dev/null
+}
+export -f git.isRepositoryFile
+
+#----------------------------------------------------------------------------------------------
+function git.lsRemote()
+{
+    local -r branch=${1:?}
+
+    git ls-remote "$branch"
+}
+export -f git.lsRemote
+
+#----------------------------------------------------------------------------------------------
+function git.lsTree()
+{
+    local -r tree_ish=${1:?}
+    local -r path=${2:?}
+    shift 2
+    local -r flags=( "$@" )
+
+    git ls-tree ${flags[*]:-} -- "$tree_ish" "$path"
+}
+export -f git.lsTree
+
+#----------------------------------------------------------------------------------------------
+function git.origin()
+{
+    local -r dir=${1:-.}
+
+    cd "$dir"
+    git describe --tags --dirty --always
+}
+export -f git.origin
+
+#----------------------------------------------------------------------------------------------
+function git.pull()
+{
+    local -r flags=( "$@" )
+
+    git pull ${flags[*]:-}
+}
+export -f git.pull
+
+#----------------------------------------------------------------------------------------------
+function git.refs()
+{
+    git log -n1 --oneline --decorate | sed 's/[^\(]*(\([^\)]*\)).*/\1/'
+}
+export -f git.refs
+
+#----------------------------------------------------------------------------------------------
+function git.remoteUrl()
+{
+#    git remote get-url origin
+    git config --get remote.origin.url
+}
+export -f git.remoteUrl
+
+#----------------------------------------------------------------------------------------------
+function git.status()
+{
+    local -r flags=( "$@" )
+
+    git status ${flags[*]:-}
+}
+export -f git.status
+
+#----------------------------------------------------------------------------------------------
+function git.repoName()
+{
+    basename "$(git rev-parse --show-toplevel)"
+}
+export -f git.repoName
+
+#----------------------------------------------------------------------------------------------
+function git.toHTTPS()
+{
+    local remote=${1:?"Input parameter 'remote' must be passed to 'function ${FUNCNAME[0]}()'"}
+
+    remote="${remote#git@}"
+    remote="${remote%.git}"
+    remote="${remote//.com:/.com/}"
+    [ "${remote:0:8}" = 'https://' ] || remote="https://$remote"
+    echo "$remote"
+}
+export -f git.toHTTPS
+
+#----------------------------------------------------------------------------------------------
+function git.url()
+{
+    git.toHTTPS "$( git.remoteUrl )"
+}
+export -f git.url
+
+#----------------------------------------------------------------------------------------------
+function git.urlCommit()
+{
+    echo "$(git.url)/commit/$(git.HEAD)"
+}
+export -f git.urlCommit
+
+#----------------------------------------------------------------------------------------------
+function git.user()
+{
+    git config --get adsk.github.account 2>/dev/null || :
+}
+export -f git.user
+
+#----------------------------------------------------------------------------------------------
+function git.userEmail()
+{
+    git config --get user.email || :
+}
+export -f git.userEmail
+
+#----------------------------------------------------------------------------------------------
+function git.userName()
+{
+    git config --get user.name || :
+}
+export -f git.userName

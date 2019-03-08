@@ -1,0 +1,16 @@
+# core Packages
+
+declare -a PKGS=( bash-completion
+                  coreutils
+                  curl
+                  docker
+                  findutils
+                  git
+                  git-lfs
+                  jq
+                  openssh-client
+                  supervisor
+                  sudo
+                  ttf-dejavu
+                  unzip
+                  zip )

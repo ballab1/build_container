@@ -1,0 +1,25 @@
+#!/bin/bash
+cat << EOF
+
+this is going to give us some really useful info (soon)
+
+    build
+    curateRepository
+    deleteImages
+    deploy
+    dockerComposeServices
+    docker-dependents
+    dockerImages
+    dockerNetworks
+    dockerProcesses
+    getImage
+    help                        This info
+    kafkaProducer.py
+    pushImage
+    registryAsJson
+    registryReport
+    removeCurrentContainers
+    retagImages
+    rmOldContainers
+
+EOF

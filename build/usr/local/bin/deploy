@@ -1,0 +1,17 @@
+#!/bin/bash
+
+declare fn=deploy.main
+if [ "$(env | grep "BASH_FUNC_${fn}%%")" ]; then
+    TOP=/opt
+else
+    declare TOP="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+    source "${TOP}/libs/loadLibraries.sh"
+
+    export HOST_IP=$(hostname -i)
+    export HOST_NAME=$(hostname -s)
+    export HOST_FQDN=$(hostname -f)
+    export CFG_USER_SECRETS=${CFG_USER_SECRETS:-}
+    export CRYPT_FILE=~/.crypt-key
+fi
+
+"$fn" "$TOP" "$@"

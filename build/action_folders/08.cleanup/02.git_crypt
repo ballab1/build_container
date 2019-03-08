@@ -1,0 +1,4 @@
+#!/bin/bash
+
+rm -rf /usr/local/crf/environment/01.GIT_CRYPT
+ 
