@@ -1,16 +1,26 @@
-FROM alpine:3.4
+ARG FROM_BASE=${DOCKER_REGISTRY:-}base_container:${CONTAINER_TAG:-latest}
+FROM $FROM_BASE
 
-ARG TZ=UTC
+# name and version of this docker image
+ARG CONTAINER_NAME=alpinefull
+# Specify CBF version to use with our configuration and customizations
+ARG CBF_VERSION=${CBF_VERSION:-v3.0}
 
-ENV VERSION=0.4 \
-    BUILDTIME_PKGS="alpine-sdk curl busybox bash rsync perl gd zlib libpng jpeg freetype mysql perl-plack findutils"
+# include our project files
+COPY build Dockerfile /tmp/
 
-ADD docker-entrypoint.sh /
+# set to non zero for the framework to show verbose action scripts
+#    (0:default, 1:trace & do not cleanup; 2:continue after errors)
+ENV DEBUG_TRACE=0
 
-# Run-time Dependencies
-RUN apk upgrade --update && \
-    apk add tzdata && cp /usr/share/zoneinfo/$TZ /etc/timezone && apk del tzdata && \
-    apk add --no-cache $BUILDTIME_PKGS && \
-    chmod u+rx,g+rx,o+rx,a-w /docker-entrypoint.sh
 
-CMD /docker-entrypoint.sh
+# build content
+RUN set -o verbose \
+    && chmod u+rwx /tmp/build.sh \
+    && /tmp/build.sh "$CONTAINER_NAME" "$DEBUG_TRACE"
+RUN [ $DEBUG_TRACE != 0 ] || rm -rf /tmp/* \n 
+
+
+ENTRYPOINT [ "docker-entrypoint.sh" ]
+#CMD ["$CONTAINER_NAME"]
+CMD ["alpinefull"]
