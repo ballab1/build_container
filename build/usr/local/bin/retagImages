@@ -18,7 +18,7 @@ if [ ! -e "$yaml" ]; then
 fi
 
 declare -a images
-mapfile -f images < <(python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)' < docker-compose.master.yml | jq '.services[].image')
+mapfile -f images < <(python -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)' < docker-compose.master.yml | jq '.services[].image')
 if [ ${#images[*] -gt 0 ]; then
     for image in "${images[@]}"; do
         image=$(eval echo $image)

@@ -52,7 +52,7 @@ function versions.data()
         return 0
     fi
 
-    commit=$(cd "$versions_dir"; git.checkout 'master' &>/dev/null; git.pull --quiet; git.HEAD)
+    commit=$(versions.lastCommit "$versions_dir")
     [ "$commit" = $(versions.COMMIT) ] || lib.updatePropertyFile 'COMMIT' "$commit" "$VERSIONS_INFO_FILE" force
 }
 export -f versions.data
@@ -60,9 +60,9 @@ export -f versions.data
 #----------------------------------------------------------------------------------------------
 function versions.DIRECTORY()
 {
-    if [ -z "$_VERSIONS_DIRECTORY" ]; then
+    if [ -z "${_VERSIONS_DIRECTORY:-}" ]; then
         local file="${1:-$VERSIONS_INFO_FILE}"
-        _VERSIONS_DIRECTORY:=$( readlink -m $(versions.DIR "$file") )
+        _VERSIONS_DIRECTORY=$( readlink -m $(versions.DIR "$file"))
     fi
     echo "$_VERSIONS_DIRECTORY"
 }
@@ -86,6 +86,28 @@ function versions.FILE()
     readlink -m "$(versions.DIRECTORY "$file")/$containerOS"
 }
 export -f versions.FILE
+
+#----------------------------------------------------------------------------------------------
+function versions.lastCommit()
+{
+    local -r versions_dir="${1:?}"
+
+    cd "$versions_dir"
+    git.checkout $(versions.LATEST) &>/dev/null
+    git.reset --hard 'HEAD~1' &>/dev/null
+    git.pull --quiet
+    git.HEAD
+}
+export -f versions.lastCommit
+
+#----------------------------------------------------------------------------------------------
+function versions.LATEST()
+{
+    local file="${1:-$VERSIONS_INFO_FILE}"
+    local branch=$(lib.getProperty "${FUNCNAME[0]##*.}" "$file" 'master')
+    echo "$branch"
+}
+export -f versions.LATEST
 
 #----------------------------------------------------------------------------------------------
 function versions.get()

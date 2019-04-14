@@ -137,7 +137,7 @@ export -f docker.showProcessReport
 function docker.yamlToJson()
 {
     local -r yamlFile=${1:?}
-    local -ar YAML_TO_JSON=( 'python' '-c' 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)' )
+    local -ar YAML_TO_JSON=( 'python' '-c' 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout, indent=4)' )
 
     if [ -e "$yamlFile"  ]; then
         "${YAML_TO_JSON[@]}" < "$yamlFile"
