@@ -1,11 +1,11 @@
-#!/bin/bash -x
+#!/bin/bash
 
 declare image=${1:?}
 
-declare REGISTRRY_SERVER=ubuntu-s2:5000
+declare REGISTRY_SERVER=ubuntu-s2:5000
 
-docker pull "$image"
-docker tag "$image" "${REGISTRRY_SERVER}/${image##*/}"
+[ "$(docker image ls -q $image)" ] || docker pull "$image"
+docker tag "$image" "${REGISTRY_SERVER}/${image##*/}"
 docker rmi "$image"
-docker push "${REGISTRRY_SERVER}/${image##*/}"
-docker rmi "${REGISTRRY_SERVER}/${image##*/}"
+docker push "${REGISTRY_SERVER}/${image##*/}"
+docker rmi "${REGISTRY_SERVER}/${image##*/}"

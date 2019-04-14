@@ -64,11 +64,16 @@ function deploy.__initGlobals()
     CFG_USER="${CFG_USER%@*}"
     readonly CFG_USER
 
-    export CFG_NAME="${CFG_GITHUB_NAME:-$(git.userName)}"
+    export CFG_NAME="${CFG_NAME:-$(git.userName)}"
     readonly CFG_NAME
 
     export CFG_EMAIL="${CFG_EMAIL:-$(git.userEmail)}"
     readonly CFG_EMAIL
+
+
+    # enable container logging during startup
+    : ${DEBUG_TRACE:=0}
+    export DEBUG_TRACE=$(( DEBUG_TRACE++ ))
 }
 export -f deploy.__initGlobals
 
@@ -185,6 +190,7 @@ function deploy.initialize()
             if [ ! -d "$dir" ]; then
                 mkdir -p "$dir" ||:
                 sudo chown "$EUID" "$dir"
+                [ "$dir" = "${service_name}/log" ] && chmod 777 "$dir"
             fi
 
             # ensure log symlinks are setup
@@ -213,49 +219,39 @@ export -f deploy.initialize
 #----------------------------------------------------------------------------------------------
 function deploy.main()
 {
-    local -r base=${1:?} ; shift
+    local -A opts
+    eval opts=( ${1:?} )
+    readonly opts
+    shift
     local -ra args=( "$@" )
 
-    deploy.__initGlobals "$base"
+    deploy.__initGlobals "${opts['base']}" \
+                         $([ -z "${opts['latest']:-}" ] || echo 'latest')
 
-    # Parse command-line options into above variable
-    local -r progname="$( basename "${BASH_SOURCE[0]}" )"
-    local -r longopts='help,Help,HELP,clean,init,latest'
-    local -r shortopts='Hhcil'
-    local -r options=$(getopt --longoptions "${longopts}" --options "${shortopts}" --name "$progname" -- ${args[@]:-}) || deploy.usage $?
-    eval set -- "$options"
-
-    local doClean doInit
-    while true; do
-        case "${1:-}" in
-            -h|--h|-H|--H|--help|-help|--HELP|-HELP|--Help|-Help)          deploy.usage 0;;
-            -c|--c|--clean)                                                doClean=1; shift;;
-            -i|--i|--init)                                                 doInit=1; shift;;
-            -l|--l|--latest)                                               CONTAINER_TAG='latest'; shift;;
-            --) shift; break                                               ;;
-            *) echo "${1:-}"; echo "Internal argument parsing error";      deploy.usage 1;;
-        esac
-    done
-
-    local workspace="$(deploy.workspace "$base")"
-    [ -z "${doClean:-}" ] || deploy.clean "$workspace"
+    local workspace="$(deploy.workspace "${opts['base']}")"
+    [ -z "${opts['clean']:-}" ] || deploy.clean "$workspace"
     mkdir -p "$workspace" ||:
 
-    versions.data "$VERSIONS_INFO"
-    versions.get "$CONTAINER_OS" 'export'
 
-    if [ "${doInit:-}" ]; then
+    (( DEBUG_TRACE-- )) ||:
+    versions.data "$VERSIONS_INFO" "${CONTAINER_TAG:-}"
+    versions.get "$CONTAINER_OS" 'export'
+    (( DEBUG_TRACE++ )) ||:
+
+
+    if [ "${opts['init']:-}" ]; then
         #  initialize devops_container_environment
         echo
         echo '$ deploy.initialize 2>&1 | tee setup.log'
-        deploy.initialize "$base" 2>&1 | tee  "${workspace}/setup.log"
+        deploy.initialize "${opts['base']}" 2>&1 | tee  "${workspace}/setup.log"
         exit 0
     fi
+
 
     #  restart devops_container_environment  (performs configuration if needed)
     echo
     echo '$ deploy.restart 2>&1 | tee restart.log'
-    deploy.restart "$base" 2>&1 | tee  "${workspace}/restart.log"
+    deploy.restart "${opts['base']}" 2>&1 | tee  "${workspace}/restart.log"
 }
 export -f deploy.main
 
@@ -293,7 +289,7 @@ function deploy.populateSecrets()
 
     elif [ -d "${CFG_USER_SECRETS}" ] &&  [ "$(readlink -f "$CFG_USER_SECRETS")" != "$(readlink -f "$secrets_dir")" ]; then
         mkdir -p "$secrets_dir"
-        cp "${CFG_USER_SECRETS}"/* "$secrets_dir"/
+        cp -r "${CFG_USER_SECRETS}"/* "$secrets_dir"/
 
     elif git.lsRemote "${CFG_USER_SECRETS}" &> /dev/null ; then
         mkdir -p "$(dirname "$secrets_dir")"
@@ -331,6 +327,16 @@ function deploy.refreshContainers()
 export -f deploy.refreshContainers
 
 #----------------------------------------------------------------------------------------------
+function deploy.removeCBFlogs()
+{
+    for dir in $(find "$WORKSPACE_DIR" -mindepth 2 -maxdepth 2 -type d -name log); do
+        [ -f "${dir}/cbf.log" ] || continue
+        sudo rm "${dir}/cbf.log"
+    done
+}
+export -f deploy.removeCBFlogs
+
+#----------------------------------------------------------------------------------------------
 function deploy.replaceIpAddresses()
 {
     local -r filename=${1:?}
@@ -353,7 +359,7 @@ function deploy.restart()
     # initialize workspace if required 'docker-compose.yml' is missing
     local -r dc_yaml="${WORKSPACE_DIR}/docker-compose.yml"
     [ -f "$dc_yaml" ] || deploy.initialize "$base"
-
+    deploy.removeCBFlogs
 
     # restart our environment
     if ! deploy.restartContainers "$dc_yaml" ; then
@@ -431,15 +437,19 @@ function deploy.updateContainerReference()
     local -r dc_yaml=${1:?}
 
     local -r json=$(docker.yamlToJson "$dc_yaml")
-    local line
+    local line newline
     while read -r line; do
-        [ $(grep -EcH '^\s+image:\s+.*CONTAINER_TAG' <<< "$line" | awk -F ':' '{print $2}') -gt 0 ] || continue
-
-        local releaseJSON=$(docker.containerVersion "$line" "$json")
-        # update workspace/docker-compose.yml when we pull latest images
-        local newline=$(jq -r '.newline' <<< "$releaseJSON")
-        [ -z "$newline" ] || [ "$line" = "$newline" ] || eval sed -i -e "'s|$line|$newline|'" "'$dc_yaml'"
-
+        if [ $(grep -EcH '^\s+image:\s+.*CONTAINER_TAG' <<< "$line" | awk -F ':' '{print $2}') -gt 0 ]; then
+            local releaseJSON=$(docker.containerVersion "$line" "$json")
+            # update workspace/docker-compose.yml when we pull latest images
+            newline=$(jq -r '.newline' <<< "$releaseJSON")
+            [ -z "$newline" ] || [ "$line" = "$newline" ] || eval sed -i -e "'s|$line|$newline|'" "'$dc_yaml'"
+        fi
+        if [ $(grep -EcH '^\s+.+\${[A-Z0-9]+_VERSION:-' <<< "$line" | awk -F ':' '{print $2}') -gt 0 ]; then
+            local keyName=$(sed -E 's|^\s+.+\$\{([A-Z0-9]+_VERSION):-[^}]+}.*$|\1|' <<< "$line")
+            newline=$(sed -E 's|^(\s+.*\$\{'${keyName}':-)[^\}]+(}.*)$|\1'${!keyName}'\2|' <<< "$line")
+            [ -z "$newline" ] || [ "$line" = "$newline" ] || eval sed -i -e "'s|$line|$newline|'" "'$dc_yaml'"
+        fi
     done < <(cat "$dc_yaml")
 }
 export -f deploy.updateContainerReference
@@ -482,9 +492,9 @@ function deploy.updateDockerComposeYaml()
               -e 's|(ZOOKEEPER_MY_ID: ).*$|\1'"${id}"'|' \
               -e 's|user:\s+"?1000"?|user: "'"${grafana_uid}"'"|' \
              "$dc_yaml"
-    [ -z "${CFG_EMAIL:-}" ]       || sed -i -r -e 's|\$\{CFG_EMAIL:-\}|${CFG_EMAIL:-'"${email}"'}|g' "$dc_yaml"
-    [ -z "${CFG_NAME:-}" ] || sed -i -r -e 's|\$\{CFG_GITHUB_NAME:-\}|${CFG_GITHUB_NAME:-'"${github_name}"'}|g' "$dc_yaml"
-    [ -z "${CFG_USER:-}" ]        || sed -i -r -e 's|\$\{CFG_USER:-\}|${CFG_USER:-'"${user}"'}|g' "$dc_yaml"
+    [ -z "${CFG_EMAIL:-}" ] || sed -i -r -e 's|\$\{CFG_EMAIL:-\}|${CFG_EMAIL:-'"${email}"'}|g' "$dc_yaml"
+    [ -z "${CFG_NAME:-}" ]  || sed -i -r -e 's|\$\{CFG_NAME:-\}|${CFG_NAME:-'"${github_name}"'}|g' "$dc_yaml"
+    [ -z "${CFG_USER:-}" ]  || sed -i -r -e 's|\$\{CFG_USER:-\}|${CFG_USER:-'"${user}"'}|g' "$dc_yaml"
 
 }
 export -f deploy.updateDockerComposeYaml
@@ -496,25 +506,6 @@ function deploy.updateSecretRefs()
     sed -i -r -e "s|file:\s+~/|file: /home/bobb/|"   "$dc_yaml"
 }
 export -f deploy.updateSecretRefs
-
-#----------------------------------------------------------------------------------------------
-function deploy.usage()
-{
-    local -i exit_status=${1:-1}
-
-    cat >&2 << EOF
-Usage:
-    $progname [ -h|--help ] | [ --clean ] | [ --init ] [ --latest ]
-
-    Common options:
-        -h --help              Display a basic set of usage instructions
-        -c --clean             0:do not clean environment
-                               1:clean environment before build (default)
-        -i --init              only initialize the environment
-        -l --latest            update to latest versions of jars rather than using those defined in docker-compose.yml
-EOF
-    exit "$exit_status"
-}
 
 #----------------------------------------------------------------------------------------------
 function deploy.validateDockerComposeYaml()

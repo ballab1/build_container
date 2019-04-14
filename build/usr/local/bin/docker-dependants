@@ -25,6 +25,7 @@ set -o noglob
 
 declare -A CONTAINERS CONTAINERS_REF IMAGES IMAGE_LAYERS IMAGE_REF MATCHED_CONTAINER_IDS NAMED_IMAGES SPECIFIED_IMAGE_DEPENDENCIES
 declare -a PARENT_IMAGE_IDS SPECIFIED_IMAGE_IDS SPECIFIED_DOCKER_REFS
+declare CONTAINERSJSON IMAGESJSON
 
 
 #------------------------------------------------------------------------------------------
@@ -43,7 +44,7 @@ Usage:
         -r --report            Display report
         -v --verbose           Display more info about progress, containers and images
 
-Project: https://github.com/ballab3/build_container
+Project: https://github.com/ballab1/bin
 
 EOF
     exit "$exit_status"
@@ -140,22 +141,23 @@ function dockerContainerInfo()
 {
     local -r id=${1:?"Input parameter 'id' must be passed to 'function ${FUNCNAME[0]}()'"}
 
-    # need to use docker Rest API to get JSON for all images
-    # then use 'jq' to extract data and remove null parents,
-    # then sed to format for BASH
-    curl --silent --unix-socket /var/run/docker.sock http://localhost/containers/json?all='true' \
-       |  jq '.[] | select(.Id=="'$id'")'
+    jq 'select(.Id=="'"$id"'")' <<< "$CONTAINERSJSON"
+}
+
+#------------------------------------------------------------------------------------------
+# query docker to get the current list of .Id and .ParentId
+function dockerImageInfo()
+{
+    local -r id=${1:?"Input parameter 'id' must be passed to 'function ${FUNCNAME[0]}()'"}
+
+    jq 'select(.Id=="'"$id"'")' <<< "$IMAGESJSON"
 }
 
 #------------------------------------------------------------------------------------------
 # query docker to get the current list of .Id and .ParentId
 function dockerImageParents()
 {
-    # need to use docker Rest API to get JSON for all images
-    # then use 'jq' to extract data and remove null parents,
-    # then sed to format for BASH
-    curl --silent --unix-socket /var/run/docker.sock http://localhost/images/json?all='true' \
-       |  jq -r '.[] | select(.ParentId != "") | "[\(.Id)]='"'"'\(.ParentId)'"'"'"'
+    jq -r 'select(.ParentId != "") | "[\(.Id)]='"'"'\(.ParentId)'"'"'"' <<< "$IMAGESJSON"
 }
 
 #------------------------------------------------------------------------------------------
@@ -172,7 +174,7 @@ function dependantsOf()
             if [[ $dependant =~ \[sha256:.+\]=sha256: ]]; then
                 eval "dependentLayers$dependant"
             else
-                dependentImages+=( $dependant )
+                dependentImages+=( "$dependant" )
             fi
         done
         [ ${#dependentImages[*]} -gt 0 ] || return 0
@@ -180,7 +182,7 @@ function dependantsOf()
         for dependant in "${dependentImages[@]}"; do
             while [ "${dependentLayers[$dependant]:-}" ]; do
                 dependant="${dependentLayers[$dependant]}"
-                dependentImages+=( $dependant )
+                dependentImages+=( "$dependant" )
             done
         done
         printf '%s\n' "${dependentImages[@]}"
@@ -236,6 +238,21 @@ function findImageIds()
             fi
         done
 
+    done
+}
+
+#------------------------------------------------------------------------------------------
+# Check for a matching container
+function findNamedImage()
+{
+    local -r image=${1:?}
+
+    # check images for info about a specified parent
+    for named_image in "${!NAMED_IMAGES[@]}"; do
+        if [ "${NAMED_IMAGES[$named_image]}" = "$image" ]; then
+            echo "$named_image"
+            return 0
+        fi
     done
 }
 
@@ -358,7 +375,7 @@ function showContainerInfo()
 
     local containerId="${props[0]:-}"
     local image="${props[1]:-}"
-    local imageId="${NAMED_IMAGES[$image]:-}"
+    local imageId="$(findNamedImage "$image")"
 
 
     colorEcho 'blue'   'Container Name:   '; echoImage "$name\\n" "$name\\n"
@@ -475,6 +492,11 @@ function showImageLayers()
             (( ++namedImageCount )) || :
             echo -n '    '; echoSHA256 "$id "
             echoImage "${IMAGES[$id]}\\n" "$image\\n"
+            local -a digests=( $(dockerImageInfo "$id" | jq -r '.RepoDigests[]|sub("^.*@";"")') )
+            if [ "${#digests[*]}" -gt 0 ]; then
+                colorEcho 'blue' '  RepoDigests:   '; colorEcho 'magenta' "${digests[0]}"'\n'
+                [ "${#digests[*]}" -gt 1 ] && printf '                 \e[35m%s\e[0m\n' "${digests[@]:1}"
+            fi
             [ $IS_LABELS -eq 0 ] && [ "${IMAGES[$id]}" != "$image" ] || showLabels "$id"
         fi
         (( ++imageCount )) || :
@@ -486,7 +508,7 @@ function showImageLayers()
     echo -en ' contains '
     colorEcho 'cyan' "${namedImageCount} named images"
     echo -en ' in a total of '
-    colorEcho 'cyan' "${imageCount} layers\n"
+    colorEcho 'cyan' "${imageCount}"' layers\n'
 }
 
 #------------------------------------------------------------------------------------------
@@ -508,7 +530,7 @@ function showLabels()
         elif [[ "${labels[i]:-}" == ' '* ]]; then
             refs+=( "${labels[i]}" )
             unset labels[i]
-            [ $idx -gt 0 ] && --idx
+            [ $idx -gt 0 ] && (( --idx ))
         fi
     done
     [ ${#refs[*]} -gt 0 ] && labels[$idx]=${labels[$idx]}$(printf ',%s' "${refs[@]}")
@@ -530,9 +552,7 @@ function verbose()
 {
     [ $IS_VERBOSE -ne 0 ] || return 0
     if [ $# -gt 0 ]; then
-        echo -en "$*\n"  >&2
-    else
-        cat
+        echo -en '$*\n'  >&2
     fi
 }
 
@@ -553,10 +573,19 @@ argsParser "$@"
 verbose "Searching for information on: $(printf ' %s' "${SPECIFIED_DOCKER_REFS[*]}")"
 
 
+# need to use docker Rest API to get JSON for all containers/images
+CONTAINERSJSON="$(curl --silent --unix-socket /var/run/docker.sock http://localhost/containers/json?all='true' | jq '.[]')"
+readonly CONTAINERSJSON
+IMAGESJSON="$(curl --silent --unix-socket /var/run/docker.sock http://localhost/images/json?all='true' | jq '.[]')"
+readonly IMAGESJSON
+
+
 
 # Populate the image info hash
 eval "IMAGES=( $(docker images --all --format '[{{.ID}}]="{{.Repository}}:{{.Tag}}"' --no-trunc) )"
 verbose "    Detected ${#IMAGES[*]} images/layers"
+# curl -k -s -X GET http://ubuntu-s4:4243/images/json?all=1 | jq -r '.[]|"[\(.Id)]=\(.RepoTags[0])"'
+
 
 # Populate the named image info hash
 NAMED_IMAGES=()

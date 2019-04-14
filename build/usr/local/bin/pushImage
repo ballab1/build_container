@@ -1,11 +1,73 @@
 #!/bin/bash
 
-declare fn=registry.push
-if [ "$(env | grep "BASH_FUNC_${fn}%%")" ]; then
-    TOP=/opt
-else
-    declare TOP="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-    source "${TOP}/libs/loadLibraries.sh"
-fi
+declare OUTPUT_FILE
 
-"$fn" "$@"
+#----------------------------------------------------------------------------------------------
+function my.usage()
+{
+    local -i exit_status=${1:-1}
+
+    cat >&2 << EOF
+Usage:
+    $progname [ -h|--help ] <image> | <image> | <image>
+
+    Common options:
+        -h --help              Display a basic set of usage instructions
+
+    Push one or more docker images to the registry. 
+    If images contain a CBF fingerprint, both the image and the image tagged with the fingerprint are pushed
+
+EOF
+    exit "$exit_status"
+}
+
+#----------------------------------------------------------------------------------------------
+function my.cmdLineArgs()
+{
+    local usage='my.usage'
+
+    # Parse command-line options into above variable
+    local -r progname="$( basename "${BASH_SOURCE[0]}" )"
+    local -r options=$(getopt --longoptions "help,Help,HELP,output:" --options "Hho:" --name "$progname" -- "$@") || "$usage" $?
+    eval set -- "$options"
+
+    local -A opts=()
+    while true; do
+        case "${1:-}" in
+            -h|--h|--help|-help)  "$usage" 1;;
+            -H|--H|--HELP|-HELP)  "$usage" 1;;
+            --Help|-Help)         "$usage" 1;;
+            --)                 shift; break;;
+        esac
+    done
+    
+    local val
+    if [ ${#opts[*]} -gt 0 ]; then
+        local -i i=0
+        for val in "${!opts[@]}"; do
+            [ $(( i++ )) -gt 0 ] && echo -n ' '
+            printf '['\''%s'\'']='\''%s'\' "$val" "${opts[$val]}"
+        done
+    fi
+    echo
+    if [ $# -gt 0 ]; then
+        for val in "$@"; do
+            echo "$val"
+        done
+    fi
+}
+#----------------------------------------------------------------------------------------------
+
+declare -i status
+declare -a args
+declare fn=registry.push
+
+declare loader="$(dirname "${BASH_SOURCE[0]}")/libs/appenv.bashlib"
+if [ ! -e "$loader" ]; then
+    echo 'Unable to load libraries'
+    exit 1
+fi
+source "$loader"
+appenv.loader "$fn"
+args=( $( my.cmdLineArgs "$@" ) ) && status=$? || status=$?
+[ $status -eq 0 ] && "$fn" ${args[@]}
