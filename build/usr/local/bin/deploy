@@ -7,14 +7,24 @@ function my.usage()
 
     cat >&2 << EOF
 Usage:
-    $progname [ -h|--help ] | [ --clean ] | [ --init ] [ --latest ]
+    $progname [ -h|--help ]
+              | [ --clean ]
+              | [ --down ]
+              | [ --init ]
+              | [ --latest ]
+              | [ --promote <branch> ]
 
     Common options:
         -h --help              Display a basic set of usage instructions
         -c --clean             0:do not clean environment
                                1:clean environment before build (default)
+        -d --down              stop services defined by 'docker-compose.yml'
         -i --init              only initialize the environment
-        -l --latest            update to latest versions of jars rather than using those defined in docker-compose.yml
+        -l --latest            update to latest versions of images rather than using those defined in docker-compose.yml
+        -p --promote <branch>  promote images in docker repo, from current <branch> to target <branch>
+                               this retags the image with the target <branch>, 
+                                   on protected branches {eg: master or integration } the ':latest' tag is used
+                               after a pull request has completed the new images should be pushed to the registry.
 
 EOF
     exit "$exit_status"
@@ -29,7 +39,7 @@ function my.cmdLineArgs()
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
-    local -r options=$(getopt --longoptions "help,Help,HELP,clean,init,latest" --options "Hhcil" --name "$progname" -- "$@") || "$usage" $?
+    local -r options=$(getopt --longoptions "help,Help,HELP,clean,down,init,latest,promote:" --options "Hhcdilp:" --name "$progname" -- "$@") || "$usage" $?
     eval set -- "$options"
 
     local -A opts=()
@@ -40,26 +50,16 @@ function my.cmdLineArgs()
             -H|--H|--HELP|-HELP)  "$usage" 1;;
             --Help|-Help)         "$usage" 1;;
             -c|--c|--clean)       opts['clean']=1; shift;;
+            -d|--d|--down)        opts['down']=1; shift;;
             -i|--i|--init)        opts['init']=1; shift;;
             -l|--l|--latest)      opts['latest']=1; shift;;
+            -p|--p|--promote)     opts['promote']=$2; shift 2;;
             --)                   shift; break;;
         esac
     done
     
-    local val
-    if [ ${#opts[*]} -gt 0 ]; then
-        local -i i=0
-        for val in "${!opts[@]}"; do
-            [ $(( i++ )) -gt 0 ] && echo -n ' '
-            printf '['\''%s'\'']='\''%s'\' "$val" "${opts[$val]}"
-        done
-    fi
-    echo
-    if [ $# -gt 0 ]; then
-        for val in "$@"; do
-            echo "$val"
-        done
-    fi
+    [ $# -eq 0 ] || term.log 'Ignoring extra arguments' 'warn'
+    appenv.results
 }
 
 #----------------------------------------------------------------------------------------------
@@ -76,6 +76,5 @@ fi
 source "$loader"
 appenv.loader "$fn"
 
-: ${BASE_TAG:=latest}
 args=( $( my.cmdLineArgs "$TOP" "$@" ) ) && status=$? || status=$?
 [ $status -eq 0 ] && "$fn" "${args[@]}" 

@@ -1,27 +1,27 @@
 #!/bin/bash
 
-#############################################################################
+#----------------------------------------------------------------------------------------------
 #
-#   deploy.bashlib; basic functions to run a cluster environment
+#   deploy.bashlib; basic functions to run a cluster docker environment
 #
-#############################################################################
-
 
 #----------------------------------------------------------------------------------------------
+# initialize global variables
 function deploy.__initGlobals()
 {
-    local -r base_dir=${1:?}
-    local -r container_tag=${2:-}
+    local -r base_dir="${1:?}"
+    local -r container_tag="${2:-}"
 
-    export START_TIME=$(date)
+    export START_TIME="$(date)"
 
     [ -e "${base_dir}/.git" ] || trap.die "invalid base directory specified"
 
-
     # setup environment
-
     export CONFIG_DIR="${base_dir}"
     readonly CONFIG_DIR
+
+    export WORKSPACE_DIR="$(deploy.workspace "$base_dir")"
+    readonly WORKSPACE_DIR
 
 
     # verify our basic setup is good
@@ -35,15 +35,13 @@ function deploy.__initGlobals()
     [ -e "$CONFIG_YAML" ] || trap.die "Invalid configuration - no $CONFIG_YAML"
 
 
-    export WORKSPACE_DIR="$(deploy.workspace "$base_dir")"
-    readonly WORKSPACE_DIR
     local -i file_count=0
     if [ -d "$WORKSPACE_DIR" ]; then
         local -a files
         mapfile -t files < <(sudo find "$WORKSPACE_DIR" -maxdepth 1 -type f ! -name '*.log' ||:)
         file_count="${#files[*]}"
     fi
-    [ $file_count -gt 0 ] || deploy.showInitializationBanner
+    [ "$file_count" -gt 0 ] || deploy.showInitializationBanner
 
 
     export VERSIONS_INFO="${CONFIG_DIR}/.versions"
@@ -55,7 +53,7 @@ function deploy.__initGlobals()
     export SECRETS_DIR="${WORKSPACE_DIR}/.secrets"
     readonly SECRETS_DIR
 
-    export CONTAINER_TAG="$container_tag"
+    export CONTAINER_TAG="$(deploy.containerTag "$container_tag")"
 
     export CFG_USER
     : ${CFG_USER:=$(git.user)}
@@ -73,94 +71,223 @@ function deploy.__initGlobals()
 
     # enable container logging during startup
     : ${DEBUG_TRACE:=0}
-    export DEBUG_TRACE=$(( DEBUG_TRACE++ ))
+    export DEBUG_TRACE=$(( ++DEBUG_TRACE )) ||:
+
+
+    # import our setup configuration
+    lib.exportFileVars "${CONFIG_DIR}/setup.cfg"
+
+    # verify we have the mandatory env variables defied
+    : ${HOST_IP:?"HOST_IP has not been configured. Please update '$setup_config'"}
+    : ${HOST_NAME:?"HOST_NAME has not been configured. Please update '$setup_config'"}
+
+    # verify that all our environment variables have been set
+    (eval echo printf '%s %s\n' $(grep ':?}' docker-compose.yml) &>/dev/null) || trap.die 'undefined environment variables'
 }
-export -f deploy.__initGlobals
 
 #----------------------------------------------------------------------------------------------
+# remove any running containers then delete workspace directory
 function deploy.clean()
 {
-    local -r workspace=${1:?}
-
-    local network="$(basename "${workspace}")_default"
+    # check networks to determine if there are running containers
+    local network="$(basename "${WORKSPACE_DIR}")_default"
     network="${network//./}"
-    local -i networks=$(docker network ls | grep "$network" | wc -l ||:)
-    if [ $networks -gt 0 ]; then
-        mkdir -p "$workspace" ||:
-        local -r dc_yaml="${workspace}/docker-compose.yml"
-        sudo cp "${CONFIG_DIR}/docker-compose.yml" "$dc_yaml"
+    local -i networks=$(docker network ls | grep -cs "$network")
+    if [ "$networks" -gt 0 ]; then
+        # need docker=compose.yml to stope/remove running containers
+        mkdir -p "$WORKSPACE_DIR" ||:
+        local -r dc_yaml="${WORKSPACE_DIR}/docker-compose.yml"
+        sudo cp "$CONFIG_YAML" "$dc_yaml"
+        sudo  sed -Ei -e 's|(:\?})|:-}|g' "$dc_yaml"
 
-        echo -en '\n\e[97m'
-        echo -n 'INFO: bringing down containers to allow 'workspace' to be cleaned'
-        echo -e '\e[0m'
-        echo "\$ docker-compose down"
+        term.log 'INFO: bringing down containers to allow "workspace" to be cleaned5\n' 'lt_magenta'
+        term.log '$docker-compose down\n' 'grey'
         docker-compose --file "$dc_yaml" down ||:
     fi
 
-    echo "\$ rm -rf $workspace"
-    sudo rm -rf "$workspace"
+    # remove workspace folder
+    term.log "\$rm -rf $WORKSPACE_DIR"'\n' 'grey'
+    sudo rm -rf "$WORKSPACE_DIR"
 }
-export -f deploy.clean
 
 #----------------------------------------------------------------------------------------------
-function deploy.generateSSL()
+function deploy.containerTag()
 {
-    local -r secretDir=${1:?}
+    local -r container_tag=${1:-}
 
-    mkdir -p "$secretDir" ||:
-    pushd "$secretDir" >/dev/null
-    if [ ! -e dhparam.pem ] || [ ! -e server.key ] || [ ! -e server.crt ] || [ ! -e server.csr ]; then
-
-        echo -en '\e[95m'
-        echo -n '>> GENERATING SSL CERT'
-        echo -e '\e[0m'
-        openssl genrsa -des3 -passout pass:x -out server.pass.key 2048
-        openssl rsa -passin pass:x -in server.pass.key -out server.key
-        rm server.pass.key
-
-        openssl dhparam -out dhparam.pem 2048
-        openssl req -new -key server.key -out server.csr -subj "/C=US/ST=Massachusetts/L=Hopkinton/O=DELL_EMC/OU=com/OU=docker.nginx.io/CN=$(hostname -s)"
-        openssl x509 -req -sha256 -days 300065 -in server.csr -signkey server.key -out server.crt
-        echo -en '\e[95m'
-        echo -n '>> GENERATING SSL CERT ... DONE'
-        echo -e '\e[0m'
-    fi
-    popd >/dev/null
+    case $(git.branch) in
+        dev)                       echo 'dev';;
+        master|integration)        echo "$container_tag";;
+        *)                         echo 'latest';;
+    esac
 }
-export -f deploy.generateSSL
+
+#----------------------------------------------------------------------------------------------
+function deploy.containerVersion()
+{
+    local -r line=${1:?}
+    local -r json=${2:?}
+
+    local container orgimage service srvc version
+    local -r awkCode="$(mktemp)"
+
+    cat <<'EOF' > "$awkCode"
+#!/usr/bin/awk -f
+# change  image: ${DOCKER_REGISTRY:-afeoscyc-mw.cec.lab.emc.com/}${DEV_TEAM:-devops/}${CONTAINER_OS:-alpine}/kafka/${KAFKA_VERSION:-2.1.0}:${CONTAINER_TAG:-6ccfce35746b02604f59e1f956cb237548baf4ad172400b7f961b646f70a2740}
+# to      image: ${DOCKER_REGISTRY:-afeoscyc-mw.cec.lab.emc.com/}devops/alpine/kafka/2.1.0:6ccfce35746b02604f59e1f956cb237548baf4ad172400b7f961b646f70a2740
+{
+  end = split($0,arr,"$");
+  i = 1;
+  for ( i=1; i<= end; i++ ) {
+    if (i == 1)
+      x = arr[i];
+    else if (i == 2)
+      x = x "$" arr[i];
+    else {
+      sub("{.+-", "", arr[i]);
+      sub("}", "", arr[i]);
+      x = x arr[i];
+    }
+  }
+  print x;
+}
+EOF
+
+    local -r image="$(sed -E 's|\s+image:\s+(.+)$|\1|' <<< "$line")"
+    while read -r srvc; do
+        service=$(jq ".services.$srvc" <<< "$json")
+        [ $(jq -r '.image' <<< "$service") = "$image" ] || continue
+
+        container=$(jq -r '.container_name' <<< "$service")
+        version=$(docker inspect "$container" | jq -r '.[].Config.Labels."container.fingerprint"')
+        [ "$version" != 'null' ] || break
+        orgimage="$(docker inspect "$container" | jq -r '.[].Config.Image')"
+
+        newline="$line"
+        [ "$(grep -cs 'CONTAINER_TAG' <<< "$newline")" -eq 0 ] || newline="${line%\${CONTAINER_TAG*}"'${CONTAINER_TAG:-'$version'}'
+
+        echo -n '{'
+        echo -n '"orgline":"'${line}'",'
+        echo -n '"orgimage":"'$(eval echo $image)'",'
+        echo -n '"version":"'$version'",'
+        echo -n '"newline":"'"$newline"'",'
+
+        [ "$(grep -cs 'CONTAINER_TAG' <<< "$newline")" -eq 0 ] || newline="${line%\${CONTAINER_TAG*}"
+        [ "$(grep -cs "$version" <<< "$newline")" -eq 0 ]      || newline="${newline%:*}:"
+        newline="${newline%:*}:$version"
+        echo -n '"promoted":"'$(awk -f "$awkCode" <<< "$newline")'",'
+        echo '"newimage":"'${orgimage%:*}:$version'"}'
+        break
+
+    done < <(jq -r '.services|keys[]' <<< "$json")
+    rm "$awkCode"
+}
+
+#----------------------------------------------------------------------------------------------
+function deploy.createVolumeFolders()
+{
+    local json="${1:?}"
+    local service_name="${2:?}"
+
+    local -a dirs=(jq '.' "$json" )
+    mapfile -t dirs < <(jq -r ".services.${service_name}.volumes[]?" <<< "$json" \
+                       | awk -F ':' '{print $1}' \
+                       | grep -v '/docker' \
+                       | grep -Ev '^~' \
+                       | sort -u ||:)
+    [ "${#dirs[*]}" -gt 0 ] || continue
+
+    local dir
+    for dir in "${dirs[@]}"; do
+        [ "${dir:0:2}" = './' ] && dir="${dir:2}"                        # remove './' prefix
+        # initialize dir when needed
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir" ||:
+            sudo chown "$EUID" "$dir"
+            [ "$dir" = "${service_name}/log" ] && chmod 777 "$dir"
+        fi
+
+        # ensure log symlinks are setup
+        if [ "$dir" = "${service_name}/log" ] && [ "$(readlink "${LOG_DIR}/$service_name")" != "${WORKSPACE_DIR}/$dir" ]; then
+            # get rid of any old stuff that may prevent us creating symlink
+            [ -f "${LOG_DIR}/$service_name" ] && sudo rm "${LOG_DIR}/$service_name"
+            [ -h "${LOG_DIR}/$service_name" ] && sudo rm "${LOG_DIR}/$service_name"
+            ln -s "${WORKSPACE_DIR}/$dir" "${LOG_DIR}/$service_name"
+        fi
+    done
+}
+
+#----------------------------------------------------------------------------------------------
+# determine changes to line of 'docker-compose'
+# called after containers are running so that up-to-date config info is available
+function deploy.fixupDCLineAfterRun()
+{
+    local line="${1:?}"
+    local json="${2:?}"
+    local property="${3:?}"       # property for 'jq' to select from JSON:  '.newline' or '.promoted'
+
+    # update image definition
+    if grep -qsE '^\s+image:\s' <<< "$line"; then
+        # update workspace/docker-compose.yml when we pull latest images
+        deploy.containerVersion "$line" "$json" | jq -r "$property"
+        return 0
+    fi
+
+    # update any versions.  (search for string containing  '${SOMEMODULE_VERSION:-xxxxxxxxxxxxxxx}'
+    if grep -qsE '^\s+.+\${[A-Z0-9]+_VERSION:-' <<< "$line"; then
+        # 'keyName' is 'SOMEMODULE_VERSION',  '!keyName' is the current/new value of 'xxxxxxxxxxxxxxx'
+        local keyName=$(sed -E 's|^\s+.+\$\{([A-Z0-9]+_VERSION):-[^}]+}.*$|\1|' <<< "$line")
+        sed -E 's|^(\s+.*\$\{'${keyName}':-)[^\}]+(}.*)$|\1'${!keyName}'\2|' <<< "$line"
+    fi
+    return 0
+}
+
+#----------------------------------------------------------------------------------------------
+# determine changes to line of 'docker-compose'
+# called before containers are running so that the workspace 'docker-compose' contains latest user changes
+function deploy.fixupDCLineBeforeRun()
+{
+    local line="${1:-}"
+    [ -z "${line:-}" ] && return 0
+
+    # skip comments
+    grep -vE '^\s*#' <<< "$line" && return 0
+
+    # update any versions.  (search for string containing  '${SOMEMODULE_VERSION:-xxxxxxxxxxxxxxx}'
+    if grep -qsE "$line" -f <(versions.get "$CONTAINER_OS" 'echo' | sed -s 's|=.*$||'); then
+        # replace version with with actual value in string similar to "${JENKINS_VERSION:-2.164.1}"
+        # ie: find 'JENKINS_VERSION' then replace '2.164.1' with value from 'versions' file
+        local version
+        for version in $(versions.get "$CONTAINER_OS" 'echo'); do
+            [ -z "${version:-}" ] && continue                # skip empty strings
+            grep -sqE '^\s*#' <<< "$version" && continue     # skip comments
+            # sed expression uses BASH string concatenation to combine regex with BASH variables
+            sed -r -e 's|(\\\$\{'"${version%=*}"':-)[^\}]+\}|\1'"${version##*=}"'\}|g' <<< "$line"
+        done
+        return 0
+    fi
+
+    # update default OS with actual OS from container.os file
+    if [ "${CONTAINER_OS}" != 'alpine' ] && grep -qsE 'alpine' <<< "$line"; then
+        sed -e 's|alpine|'"${CONTAINER_OS}"'|' <<< "$line"
+        return 0
+    fi
+    return 0
+}
 
 #----------------------------------------------------------------------------------------------
 # setup workspace if it does not exist
 function deploy.initialize()
 {
-    local -r base=${1:?}
-
-    # import our setup configuration
-    local -r setup_config="${CONFIG_DIR}/setup.cfg"
-    if [ -e "$setup_config" ]; then
-        while read -r line; do
-            eval "export $line"
-        done < <(cat "$setup_config")
-    fi
-
-    : ${KAFKA_ID:?"KAFKA_ID has not been configured. Please update '$setup_config'"}
-    : ${GRAFANA_UID:?"GRAFANA_UID has not been configured. Please update '$setup_config'"}
-    : ${HOST_IP:?"HOST_IP has not been configured. Please update '$setup_config'"}
-    : ${HOST_NAME:?"HOST_NAME has not been configured. Please update '$setup_config'"}
-
+    # create WORKSPACE_DIR/docker-compose.yml
+    deploy.refreshDockerCompose
 
     # ensure our log dir exists
     [ -d "$LOG_DIR" ] || mkdir -p "$LOG_DIR" ||:
 
-    mkdir -p "$WORKSPACE_DIR" ||:
-    cd "$WORKSPACE_DIR"
 
-    # copy docker-compose.yml to workspace
-    local -r dc_yaml="${WORKSPACE_DIR}/docker-compose.yml"
-    [ -e "$dc_yaml" ] || deploy.updateDockerComposeYaml "$dc_yaml"
+    local dc_yaml="${WORKSPACE_DIR}/docker-compose.yml"
     local json="$(docker.yamlToJson "$dc_yaml")"
-
-
     local -ri num_secrets=$(jq '.services[]|select(has("secrets"))|.secrets[]' <<< "$json" | wc -l)
     [ "$num_secrets" -eq 0 ] || [ -d "$SECRETS_DIR" ] || deploy.populateSecrets "$SECRETS_DIR"
 
@@ -176,32 +303,7 @@ function deploy.initialize()
         fi
 
         # get any defined volumes
-        local -a dirs=(jq '.' "$json" )
-        mapfile -t dirs < <(jq -r ".services.${service_name}.volumes[]?" <<< "$json" \
-                           | awk -F ':' '{print $1}' \
-                           | grep -v '/docker' \
-                           | grep -Ev '^~' \
-                           | sort -u ||:)
-        [ "${#dirs[*]}" -gt 0 ] || continue
-
-        for dir in "${dirs[@]}"; do
-            [ "${dir:0:2}" = './' ] && dir="${dir:2}"                        # remove './' prefix
-            # initialize dir when needed
-            if [ ! -d "$dir" ]; then
-                mkdir -p "$dir" ||:
-                sudo chown "$EUID" "$dir"
-                [ "$dir" = "${service_name}/log" ] && chmod 777 "$dir"
-            fi
-
-            # ensure log symlinks are setup
-            if [ "$dir" = "${service_name}/log" ] && [ "$(readlink "${LOG_DIR}/$service_name")" != "${WORKSPACE_DIR}/$dir" ]; then
-                # get rid of any old stuff that may prevent us creating symlink
-                [ -f "${LOG_DIR}/$service_name" ] && sudo rm "${LOG_DIR}/$service_name"
-                [ -h "${LOG_DIR}/$service_name" ] && sudo rm "${LOG_DIR}/$service_name"
-                ln -s "${WORKSPACE_DIR}/$dir" "${LOG_DIR}/$service_name"
-            fi
-        done
-
+        deploy.createVolumeFolders "$json" "$service_name"
     done
 
 
@@ -214,7 +316,6 @@ function deploy.initialize()
     # update secret references (cannot apply these with other docker-compose.yml updates)
     [ "$num_secrets" -eq 0 ] || deploy.updateSecretRefs "$dc_yaml"
 }
-export -f deploy.initialize
 
 #----------------------------------------------------------------------------------------------
 function deploy.main()
@@ -225,35 +326,43 @@ function deploy.main()
     shift
     local -ra args=( "$@" )
 
-    deploy.__initGlobals "${opts['base']}" \
-                         $([ -z "${opts['latest']:-}" ] || echo 'latest')
+    deploy.__initGlobals "${opts['base']}" "${opts['latest']:-}"
 
-    local workspace="$(deploy.workspace "${opts['base']}")"
-    [ -z "${opts['clean']:-}" ] || deploy.clean "$workspace"
-    mkdir -p "$workspace" ||:
+    [ -z "${opts['clean']:-}" ] || deploy.clean
+    mkdir -p "$WORKSPACE_DIR" ||:
 
 
+    # temporarily reduce DEBUG_TRACE to prevent 'git' tracing
     (( DEBUG_TRACE-- )) ||:
     versions.data "$VERSIONS_INFO" "${CONTAINER_TAG:-}"
     versions.get "$CONTAINER_OS" 'export'
     (( DEBUG_TRACE++ )) ||:
 
-
     if [ "${opts['init']:-}" ]; then
         #  initialize devops_container_environment
-        echo
-        echo '$ deploy.initialize 2>&1 | tee setup.log'
-        deploy.initialize "${opts['base']}" 2>&1 | tee  "${workspace}/setup.log"
+        term.log '$deploy.initialize 2>&1 | tee setup.log\n' 'grey'
+        deploy.initialize 2>&1 | tee "${WORKSPACE_DIR}/setup.log"
+        exit 0
+    fi
+
+    local dc_yaml="${WORKSPACE_DIR}/docker-compose.yml"
+    if [ "${opts['down']:-}" ] && [ -f "$dc_yaml" ]; then
+        # stop any running containers
+        term.log '\nINFO: bringing down containers\n' 'white'
+        term.log 'docker-compose --file '"$dc_yaml"' down\n' 'grey'
+        docker-compose --file "$dc_yaml" down ||:
         exit 0
     fi
 
 
     #  restart devops_container_environment  (performs configuration if needed)
-    echo
-    echo '$ deploy.restart 2>&1 | tee restart.log'
-    deploy.restart "${opts['base']}" 2>&1 | tee  "${workspace}/restart.log"
+    term.log '$deploy.restart 2>&1 | tee restart.log\n' 'grey'
+    deploy.restart 2>&1 | tee "${WORKSPACE_DIR}/restart.log"
+
+
+    #  update production files if this is for promotion
+    [ -z "${opts['promote']:-}" ] || deploy.toProduction
 }
-export -f deploy.main
 
 #----------------------------------------------------------------------------------------------
 function deploy.passwordSecret()
@@ -263,16 +372,16 @@ function deploy.passwordSecret()
     local -r pwdVar=${3:?}
 
     local secret jqquery
-    local password=$(jq -r '.services.'${service}'.environment.'${pwdVar} <<< "$json" )
+    local password="$(jq -r '.services.'${service}'.environment.'${pwdVar} <<< "$json" )"
     if [ "$password" = 'null' ];then
-        password=$(jq -r '.services.'${service}'.environment.'${pwdVar}'_FILE' <<< "$json" )
-        secret=$(basename "$password")
-        jqquery=".secrets.\"${secret}\".file"
+        password="$(jq -r '.services.'${service}'.environment.'${pwdVar}'_FILE' <<< "$json" )"
+        secret="$(basename "$password")"
+        jqquery='.secrets."'"${secret}"'".file'
         local pwd_file="$(eval echo "$(jq -r "$jqquery" <<< "$json" )")"
-        [ -e $pwd_file ] || trap.die "Password file: '$pwd_file' not found. Used by startup of service: $service"
-        password=$(< $pwd_file)
+        [ -e "$pwd_file" ] || trap.die "Password file: '$pwd_file' not found. Used by startup of service: $service"
+        password=$(< "$pwd_file")
     fi
-    echo $password
+    echo "$password"
 }
 export -f deploy.passwordSecret
 
@@ -281,7 +390,7 @@ function deploy.populateSecrets()
 {
     local -r secrets_dir=${1:-}
 
-    echo 'populating secrets'
+    term.log 'populating secrets\n'
     if [ -z "${CFG_USER_SECRETS:-}" ]; then
         [ "${OPEN_SECRETS_REPO:-}" ] || trap.die  "no definition provided for 'secrets'"
         mkdir -p "$(dirname "$secrets_dir")"
@@ -294,18 +403,35 @@ function deploy.populateSecrets()
     elif git.lsRemote "${CFG_USER_SECRETS}" &> /dev/null ; then
         mkdir -p "$(dirname "$secrets_dir")"
         git.clone "$CFG_USER_SECRETS" "$secrets_dir" --quiet
-        if [ "$(grep -cH 'git-crypt' "${secrets_dir}/.gitattributes" 2>/dev/null | cut -d ':' -f2)" -gt 0 ]; then
+        if [ "$(grep -cs 'git-crypt' "${secrets_dir}/.gitattributes")" -gt 0 ]; then
             [ -e "${CRYPT_FILE:-}" ] || trap.die "secrets are encoded, but CRYPT_FILE: '${CRYPT_FILE:-}' does not exist"
             (cd "$secrets_dir"; git.cryptUnlock )
         fi
-    else
-        trap.die  "missing 'secrets' directory in workspace"
-    fi
 
-    # ensure we have self signed certs (incase they are not include in secrets dir
-    deploy.generateSSL "$secrets_dir"
+    else
+        trap.die  "missing 'secrets' directory in WORKSPACE_DIR"
+    fi
 }
-export -f deploy.populateSecrets
+
+#----------------------------------------------------------------------------------------------
+function deploy.pushImages()
+{
+    local -r dc_yaml=${1:?}
+
+    local image service srvc
+    local -a images=()
+
+    local -r json=$(docker.yamlToJson "$dc_yaml")
+
+    # extract images from docker-compose
+    while read -r srvc; do
+        service=$(jq ".services.$srvc" <<< "$json")
+        image="$(eval echo "$(jq -r '.image' <<< "$service")" )"
+        images+=( "$image" )
+    done < <(jq -r '.services|keys[]' <<< "$json")
+
+    registry.push 1 "${images[@]}"
+}
 
 #----------------------------------------------------------------------------------------------
 function deploy.refreshContainers()
@@ -313,18 +439,27 @@ function deploy.refreshContainers()
     local -r dc_yaml=${1:?}
 
     # make sure we start the correct versions
-    echo -en '\n\e[97m'
     if [ "${CONTAINER_TAG:-}" = 'latest' ]; then
-        echo -n 'INFO: updating containers to latest versions'
+        term.log '\nINFO: updating containers to latest versions\n' 'white'
     else
-        echo -n "INFO: using container fingerprints defined in docker-compose.yml"
+        term.log '\n'"INFO: using container fingerprints defined in docker-compose.yml"'\n' 'white'
     fi
-    echo -e '\e[0m'
-    echo " docker-compose --file $dc_yaml pull"
+    term.log 'docker-compose --file '"$dc_yaml"' pull\n' 'grey'
     docker-compose --file "$dc_yaml" pull || return 1
-    docker.rmOldContainers
 }
-export -f deploy.refreshContainers
+
+#----------------------------------------------------------------------------------------------
+function deploy.refreshDockerCompose()
+{
+    mkdir -p "$WORKSPACE_DIR" ||:
+    cd "$WORKSPACE_DIR"
+
+    # update skip.wait & docker-compose
+    cp "${CONFIG_DIR}/skip.wait" "${WORKSPACE_DIR}/skip.wait"
+    if deploy.updateFile "$CONFIG_YAML" "${WORKSPACE_DIR}/docker-compose.yml" deploy.fixupDCLineBeforeRun; then
+        term.log "\nINFO: updating ${WORKSPACE_DIR}/docker-compose.yml"'\n' 'white'
+    fi
+}
 
 #----------------------------------------------------------------------------------------------
 function deploy.removeCBFlogs()
@@ -334,7 +469,6 @@ function deploy.removeCBFlogs()
         sudo rm "${dir}/cbf.log"
     done
 }
-export -f deploy.removeCBFlogs
 
 #----------------------------------------------------------------------------------------------
 function deploy.replaceIpAddresses()
@@ -353,46 +487,46 @@ export -f deploy.replaceIpAddresses
 #----------------------------------------------------------------------------------------------
 function deploy.restart()
 {
-    local -r base=${1:-}
-
-
     # initialize workspace if required 'docker-compose.yml' is missing
     local -r dc_yaml="${WORKSPACE_DIR}/docker-compose.yml"
-    [ -f "$dc_yaml" ] || deploy.initialize "$base"
+    if [ -f "$dc_yaml" ]; then
+        deploy.refreshDockerCompose
+    else
+        deploy.initialize
+    fi
     deploy.removeCBFlogs
 
     # restart our environment
-    if ! deploy.restartContainers "$dc_yaml" ; then
-        echo -en '\e[97m'
-        echo -n "Failed to succussfully deploy container services."
-        echo -e '\e[0m'
+    if ! deploy.restartContainers "$dc_yaml"; then
+        term.log 'Failed to succussfully deploy container services.\n' 'white'
         exit 1
     fi
 
     local -r run_log="${WORKSPACE_DIR}/run.log"
     deploy.waitForInitializationComplete "$dc_yaml" "$run_log"
+    term.log '\nINFO: removing old containers\n' 'white'
+    docker.rmOldContainers
 
     docker.showProcessReport
     echo
 
     if [ "${INITIALIZATION:-}" ]; then
-        echo -en '\e[97m'
-        echo -n "Initializing complete. If this setup includes a web server, please open the following URL in your browser: http://$HOST_IP"
-        echo -e '\e[0m'
+        term.log "Initializing complete. If this setup includes a web server, please open the following URL in your browser: http://$HOST_IP"'\n' 'white'
     fi
     exit 0
 }
-export -f deploy.restart
 
 #----------------------------------------------------------------------------------------------
 function deploy.restartContainers()
 {
     local -r dc_yaml=${1:?}
-    local status
+    local -i status
 
     # stop any running containers
-    echo " docker-compose --file $dc_yaml down"
+    term.log '\nINFO: bringing down containers\n' 'white'
+    term.log 'docker-compose --file '"$dc_yaml"' down\n' 'grey'
     docker-compose --file "$dc_yaml" down ||:
+
     set -o verbose
     sudo find -L "$LOG_DIR" -type f ! -name '.*' -delete
     set +o verbose
@@ -400,104 +534,136 @@ function deploy.restartContainers()
     deploy.refreshContainers "$dc_yaml" && status=$? || status=$?
     [ $status -eq 0 ] || return $status
 
-    local -i status
-    echo -en '\e[97m'
-    echo -n 'INFO: bringing up containers'
-    echo -e '\e[0m'
-    echo " docker-compose --file $dc_yaml up --detach"
+    term.log '\nINFO: bringing up containers\n' 'white'
+    term.log 'docker-compose --file '"$dc_yaml"' up --detach\n' 'grey'
     # docker-compose v1.17.0 does not like '--detach'!
     docker-compose --file "$dc_yaml" up -d  && status=$? || status=$?
+    [ $status -eq 0 ] || return $status
 
     # fixup docker-compose.yml to reflect the image versions in use
     if [ "${CONTAINER_TAG:-}" = 'latest' ]; then
-        echo 'Updating reference docker-compose.yml'
-        deploy.updateContainerReference "$CONFIG_YAML"
-        deploy.updateContainerReference "$dc_yaml"
+        # Updating reference docker-compose.yml
+#        deploy.updateContainerReferences "$CONFIG_YAML"
+        deploy.updateContainerReferences "$dc_yaml"
     fi
-    return $status
+    return 0
 }
-export -f deploy.restartContainers
+
+#----------------------------------------------------------------------------------------------
+function deploy.reTagImages()
+{
+    local -r dc_yaml=${1:?}
+
+    local image tag
+    local orgtag=$(git.branch)
+    while read -r image; do
+        image="$(eval echo $image)"
+        if [ $(docker images | grep -cs "$image") -gt 0 ]; then
+#            image="${image%=*}"
+#           tag="${image##*=}"
+            term.log "renaming $image to ${image%=*}:$CONTAINER_TAG"'\n' 'warn'
+            docker tag "$image" "${image%=*}:$CONTAINER_TAG"
+        else
+            term.log "no images matching $image"'\n' 'warn'
+        fi
+    done < <(grep -E '^\s+image:\s' "$dc_yaml" | sed -E -e 's|^\s+image:\s+||' )
+}
 
 #----------------------------------------------------------------------------------------------
 function deploy.showInitializationBanner()
 {
-    echo -e '\e[97m'
-    echo '******************************************************************************'
-    echo '*                                                                            *'
-    echo "*  initializing DevOps Container Environment on $(environ.ipAddress)"
-    echo '*                                                                            *'
-    echo '******************************************************************************'
-    echo -e '\e[0m'
+    term.log '******************************************************************************\n' 'white'
+    term.log '*                                                                            *\n' 'white'
+    term.log "*  initializing DevOps Container Environment on $(environ.ipAddress)"'\n'         'white'
+    term.log '*                                                                            *\n' 'white'
+    term.log '******************************************************************************\n' 'white'
     export INITIALIZATION='true'
 }
 
 #----------------------------------------------------------------------------------------------
-function deploy.updateContainerReference()
+function deploy.toProduction()
 {
-    local -r dc_yaml=${1:?}
+    #  verify repo is not dirty
+    #  verify latest is running
+    #  verify branch is not protected
 
-    local -r json=$(docker.yamlToJson "$dc_yaml")
-    local line newline
-    while read -r line; do
-        if [ $(grep -EcH '^\s+image:\s+.*CONTAINER_TAG' <<< "$line" | awk -F ':' '{print $2}') -gt 0 ]; then
-            local releaseJSON=$(docker.containerVersion "$line" "$json")
-            # update workspace/docker-compose.yml when we pull latest images
-            newline=$(jq -r '.newline' <<< "$releaseJSON")
-            [ -z "$newline" ] || [ "$line" = "$newline" ] || eval sed -i -e "'s|$line|$newline|'" "'$dc_yaml'"
-        fi
-        if [ $(grep -EcH '^\s+.+\${[A-Z0-9]+_VERSION:-' <<< "$line" | awk -F ':' '{print $2}') -gt 0 ]; then
-            local keyName=$(sed -E 's|^\s+.+\$\{([A-Z0-9]+_VERSION):-[^}]+}.*$|\1|' <<< "$line")
-            newline=$(sed -E 's|^(\s+.*\$\{'${keyName}':-)[^\}]+(}.*)$|\1'${!keyName}'\2|' <<< "$line")
-            [ -z "$newline" ] || [ "$line" = "$newline" ] || eval sed -i -e "'s|$line|$newline|'" "'$dc_yaml'"
-        fi
-    done < <(cat "$dc_yaml")
+    #  retag images
+    #  push images to registry
+    #  update workspace docker-compose
+    #  update deploy docker-compose
+
+    #  update main docker-compose.yml if this is for promotion
+    if [ "${CONTAINER_TAG:-}" != 'latest' ]; then
+        deploy.reTagImages "$dc_yaml"
+        # Updating reference docker-compose.yml
+        deploy.updateContainerReferences "$CONFIG_YAML" "${opts['promote']}"
+        # now update docker registry
+        deploy.pushImages "$dc_yaml"
+    fi
 }
-export -f deploy.updateContainerReference
 
 #----------------------------------------------------------------------------------------------
-function deploy.updateDockerComposeYaml()
+function deploy.updateContainerReferences()
 {
     local -r dc_yaml=${1:?}
-    local -r id=${2:-$KAFKA_ID}
-    local -r host_ip=${3:-$HOST_IP}
-    local -r this_host=${4:-$HOST_NAME}
-    local -r grafana_uid=${5:-$GRAFANA_UID}
-    local -r email=${6:-$CFG_EMAIL}
-    local -r user=${7:-$CFG_USER}
-    local -r github_name=${5:-$CFG_NAME}
+    local -r promoted=${2:-}
 
-    cp "${CONFIG_DIR}/skip.wait" "${WORKSPACE_DIR}/skip.wait"
+    local property
+    if [ "${promoted:-}" ]; then
+        property='.promoted'
+    else
+        term.log '   Updating '"$dc_yaml"'\n'
+        property='.newline'
+    fi
 
-    term.log "updating $dc_yaml:\n" 'white'
-
-    # update copy of docker-compose
-    term.log "    removing unneeded comments\n" 'grey'
-    grep -vE '^\s*#' "$CONFIG_YAML" > "$dc_yaml"
-
-    term.log "    updating VERSIONS referenced\n" 'grey'
-    for version in $(versions.get "$CONTAINER_OS" 'echo'); do
-        var="${version%=*}"
-        val="${version##*=}"
-        eval sed -i -r -e "'s|(\\\$\{${var}:-)[^\}]+\}|\1${val}\}|g'" "$dc_yaml"
-    done
-
-    [ $(grep -cEH '255\.255\.255\.255' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ] && term.log "    updating IP to $host_ip\n" 'grey'
-    [ $(grep -cEH 'alpine' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]             && term.log "    updating CONTAINER_OS to ${CONTAINER_OS}\n" 'grey'
-    [ $(grep -cEH 'KAFKA_BROKER_ID:' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]   && term.log "    updating KAFKA_BROKER_ID to ${id}\n" 'grey'
-    [ $(grep -cEH 'ZOOKEEPER_MY_ID:' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]   && term.log "    updating ZOOKEEPER_MY_ID to ${id}\n" 'grey'
-    [ $(grep -cEH 'user:' "$dc_yaml" 2>/dev/null | cut -d':' -f 2) -gt 0 ]              && term.log "    updating GRAFANA_UID to ${grafana_uid}\n" 'grey'
-    sed -i -r -e 's|255.255.255.255|'"${host_ip}"'|g' \
-              -e 's|alpine|'"${CONTAINER_OS}"'|g' \
-              -e 's|(KAFKA_BROKER_ID: ).*$|\1'"${id}"'|' \
-              -e 's|(ZOOKEEPER_MY_ID: ).*$|\1'"${id}"'|' \
-              -e 's|user:\s+"?1000"?|user: "'"${grafana_uid}"'"|' \
-             "$dc_yaml"
-    [ -z "${CFG_EMAIL:-}" ] || sed -i -r -e 's|\$\{CFG_EMAIL:-\}|${CFG_EMAIL:-'"${email}"'}|g' "$dc_yaml"
-    [ -z "${CFG_NAME:-}" ]  || sed -i -r -e 's|\$\{CFG_NAME:-\}|${CFG_NAME:-'"${github_name}"'}|g' "$dc_yaml"
-    [ -z "${CFG_USER:-}" ]  || sed -i -r -e 's|\$\{CFG_USER:-\}|${CFG_USER:-'"${user}"'}|g' "$dc_yaml"
-
+    local -r json=$(docker.yamlToJson "$dc_yaml")
+    deploy.updateFile "$CONFIG_YAML" "$dc_yaml" deploy.fixupDCLineAfterRun "$json" "$property" ||:
 }
-export -f deploy.updateDockerComposeYaml
+
+#----------------------------------------------------------------------------------------------
+function deploy.updateFile()
+{
+    local -r srcfile=${1:?}
+    local -r dstfile=${2:?}
+    local process=${3:?}
+    shift 3
+
+    local line newline tmp_file
+    local -i status
+
+    tmp_file="${dstfile#.*}.tmp"
+    (while read -r line; do
+        if [ -z "${line:-}" ] || grep -sq '^\s+$' <<< "$line" ; then
+            echo
+            continue
+        fi
+        newline=$("$process" "$line" "$@") && status=$? || status=$?
+        [[ "$status" -ne 0 || -z "${newline:-}" ]] && newline="$line"
+        if [ "$(grep -cEs ':\?}' <<< "$newline")" -gt 0 ]; then
+            local indent="$(sed -Ee 's|^(\s+).*$|\1|' <<< "$newline")"
+            newline="$(eval echo $newline)"
+            echo "${indent}$newline"
+         else
+            echo "$newline"
+         fi
+    done < <(cat "$srcfile")) > "$tmp_file"
+
+    # if there are no changes, delete tmp file
+    if [ "$(lib.fileSha256 "$dstfile")" = "$(lib.fileSha256 "$tmp_file")" ]; then
+        rm "$tmp_file"
+        return 1   # no updates
+    else
+        # otherwise rename 'srcfile' to file.YYYYMMDDhhmmss.bak and rename updated file to 'dstfile'
+        # create backup of dstfile before we update it
+        if [ -f "$dstfile" ]; then
+            local backup="${dstfile%.*}.$(date +"%Y%m%d%H%M%S").${dstfile##*.}.bak"
+            backup="$(dirname "$backup")/~$(basename "$backup")"
+            mv "$dstfile" "$backup"
+        fi
+        mv "$tmp_file" "$dstfile"
+        return 0   # file updated
+    fi
+}
 
 #----------------------------------------------------------------------------------------------
 function deploy.updateSecretRefs()
@@ -505,7 +671,6 @@ function deploy.updateSecretRefs()
     local -r dc_yaml=${1:?}
     sed -i -r -e "s|file:\s+~/|file: /home/bobb/|"   "$dc_yaml"
 }
-export -f deploy.updateSecretRefs
 
 #----------------------------------------------------------------------------------------------
 function deploy.validateDockerComposeYaml()
@@ -513,7 +678,6 @@ function deploy.validateDockerComposeYaml()
     local -r dc_yaml=${1:?}
     [ $(jq '.services[].ports[]' <<< "$dc_yaml" | sort | wc -l) -eq $(jq '.services[].ports[]' <<< "$dc_yaml"| sort -u) ] || return 1
 }
-export -f deploy.validateDockerComposeYaml
 
 #----------------------------------------------------------------------------------------------
 function deploy.waitForInitializationComplete()
@@ -534,28 +698,33 @@ function deploy.waitForInitializationComplete()
     local container line
     local -i index=1
 
-    echo -en '\n\e[97m'
-    echo -n "INFO: waiting for ${#containers[*]} containers to complete their startup"
-    echo -e '\e[0m'
-    while [ ${#finished[*]} -lt ${#containers[*]} ]; do
+    term.log '\n'"INFO: waiting for ${#containers[*]} containers to complete their startup"'\n' 'white'
+    while [ "${#finished[*]}" -lt "${#containers[*]}" ]; do
+        # sleep 5 secs between scans
         sleep 5
         lines=()
+
+        # check all known containers
         for container in "${containers[@]}"; do
-            if grep "$container" "${WORKSPACE_DIR}/skip.wait" >/dev/null &&  [ -z "${finished[${container,,}]:-}" ]; then
+            # ignore any that are defined in 'skip.wait'
+            if [ $(grep -cs "$container" "${WORKSPACE_DIR}/skip.wait") -gt 0 ] && [ -z "${finished[${container,,}]:-}" ]; then
                 printf '%02d. %s: skipping wait.\n' $(( index++ )) "${container^^}"
                 finished[$container]='0'
             fi
 
+            # look for specific 'end of startup' string in logs
             local text="$(docker logs "${container,,}" 2>&1 | grep -s "Finished executing startup" | head -1 ||: )"
             [ "$text" ] || continue                                        # ignore blank lines
             [ "${container,,}" ] || continue                               # ignore invalid container
             [ -z "${finished[${container,,}]:-}" ] || continue             # ignore if we already have this result
 
+            # keep track of what has finished
             finished[${container,,}]="$text"
             lines+=( "$(sed -Ee 's|^.+Finished executing startup scripts after ||' <<< "$text" | awk -F ':' '{ print ((($1 * 60) + $2) * 60) + $3 }')_${container,,}" )
         done
-        [ ${#lines[*]} -gt 0 ] || continue
 
+        # print out any containers we foound in this scan
+        [ "${#lines[*]}" -gt 0 ] || continue
         for line in $(printf '%s\n' "${lines[@]}" | sort -t '_' -k 1n,2); do   # sort by time taken to finish startup
             container="${line##*_}"                                            # extract container name
             container="${container,,}"
@@ -564,8 +733,9 @@ function deploy.waitForInitializationComplete()
         done
     done
 
+    # update the run.log from each 'docker logs'
     for container in "${containers[@]}"; do
-        if grep "$container" "${WORKSPACE_DIR}/skip.wait" >/dev/null ; then
+        if [ $(grep -cs "$container" "${WORKSPACE_DIR}/skip.wait") -gt 0 ]; then
             echo >> "$run_log" 2>&1
             echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>' >> "$run_log" 2>&1
             echo "${container}" >> "$run_log" 2>&1
@@ -574,7 +744,6 @@ function deploy.waitForInitializationComplete()
         fi
     done
 }
-export -f deploy.waitForInitializationComplete
 
 #----------------------------------------------------------------------------------------------
 function deploy.workspace()
@@ -582,6 +751,5 @@ function deploy.workspace()
     local -r base_dir=${1:?}
     echo "${base_dir}/workspace.$(basename "$base_dir")"
 }
-export -f deploy.workspace
 
 #----------------------------------------------------------------------------------------------
