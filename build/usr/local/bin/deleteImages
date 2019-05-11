@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #----------------------------------------------------------------------------------------------
-function my.usage()
+function deleteImages.usage()
 {
     local -i exit_status=${1:-1}
 
@@ -20,9 +20,9 @@ EOF
 }
 
 #----------------------------------------------------------------------------------------------
-function my.cmdLineArgs()
+function deleteImages.cmdLineArgs()
 {
-    local usage='my.usage'
+    local usage='deleteImages.usage'
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
@@ -39,27 +39,50 @@ function my.cmdLineArgs()
         esac
     done
     
-    local val
-    if [ ${#opts[*]} -gt 0 ]; then
-        local -i i=0
-        for val in "${!opts[@]}"; do
-            [ $(( i++ )) -gt 0 ] && echo -n ' '
-            printf '['\''%s'\'']='\''%s'\' "$val" "${opts[$val]}"
-        done
-    fi
-    echo
-    if [ $# -gt 0 ]; then
-        for val in "$@"; do
-            echo "$val"
-        done
-    fi
+    appenv.results "$@"
+}
+
+#----------------------------------------------------------------------------------------------
+function deleteImages.main()
+{
+    local -A opts
+    eval opts=( $1 )
+    readonly opts
+    shift
+    local -ra ids=( "$@" )
+
+    [ "${#ids[*]}" -gt 0 ] || return 0
+
+    local id name tag digest
+    local -A tags
+    for id in "${ids[@]}"; do
+        if [[ "$id" = *:* ]]; then
+            name="${id%:*}"
+            tag="${id##*:}"
+            [ "${name:-}" ] && [ "${tag:-}" ] || trap.die "Invalid $id specified"
+
+            if [ "${tag:0:7}" = 'sha256:' ]; then
+                registry.deleteImage "$name" "$tag"
+            else
+                digest="$(registry.digest "$name" "$tag")"
+                [ -z "$digest" ] || registry.deleteImage "$name" "$digest"
+            fi
+
+        else
+            eval tags=( $(registry.tags "$id") )
+            [ "${#tags[*]}" -gt 0 ] || continue
+            for digest in $(printf '%s\n' "${tags[@]}" | sort -u); do
+                registry.deleteImage "$id" "$digest"
+            done
+        fi
+    done
 }
 
 #----------------------------------------------------------------------------------------------
 
 declare -i status
 declare -a args
-declare fn=registry.deleteImages
+declare fn=deleteImages.main
 
 declare loader="$(dirname "${BASH_SOURCE[0]}")/libs/appenv.bashlib"
 if [ ! -e "$loader" ]; then
@@ -68,5 +91,5 @@ if [ ! -e "$loader" ]; then
 fi
 source "$loader"
 appenv.loader "$fn"
-args=( $( my.cmdLineArgs "$@" ) ) && status=$? || status=$?
-[ $status -eq 0 ] && "$fn" ${args[@]}
+args=( $( deleteImages.cmdLineArgs "$@" ) ) && status=$? || status=$?
+[ $status -eq 0 ] && deleteImages.main ${args[@]}

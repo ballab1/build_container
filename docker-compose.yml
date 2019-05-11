@@ -26,6 +26,7 @@ services:
                 container.git.url: $CONTAINER_GIT_URL
                 container.origin: $CONTAINER_ORIGIN
                 container.orginal.name: build_container
+                container.parent: $CONTAINER_PARENT 
                 version.cbf: $CBF_VERSION
         environment:
             DEBUG_TRACE: ${DEBUG_TRACE:-0}

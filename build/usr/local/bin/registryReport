@@ -1,79 +1,99 @@
 #!/bin/bash
 
 #----------------------------------------------------------------------------------------------
-function my.usage()
+function registryReport.usage()
 {
     local -i exit_status=${1:-1}
 
     cat >&2 << EOF
 Usage:
-    $progname [ -h|--help ] | [ --output <filename> ]  <repository> | <repository> | <repository>
+    $progname [ -h|--help ] |
+              [ --format <json|text> ] |
+              [ --output <filename> ]
+              <repository> | <repository> | <repository>
 
     Common options:
         -h --help                 Display a basic set of usage instructions
+        -f --format <json|text>   format output as JSON|TEXT
         -o --output <filename>    name of file to output
 
     Report the contents of the name docker repository from the registry, if no repositories are name, all are reported
     The name of the docker registry should not be included in the repository name.
+    One or more repository may be specified. regex expressions are permitted to define the repository names.
 
-EOF     exit "$exit_status"
+EOF
+
+    exit "$exit_status"
 }
 
 #----------------------------------------------------------------------------------------------
-function my.cmdLineArgs()
+function registryReport.cmdLineArgs()
 {
-    local usage='my.usage'
+    local usage='registryReport.usage'
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
-    local -r options=$(getopt --longoptions "help,Help,HELP,output:" --options "Hho:" --name "$progname" -- "$@") || "$usage" $?
+    local -r options=$(getopt --longoptions "help,Help,HELP,format:,output:" --options "Hhf:o:" --name "$progname" -- "$@") || "$usage" $?
     eval set -- "$options"
 
-    local -A opts=()
+    local -A opts=( ['format']='json' )
     while true; do
         case "${1:-}" in
             -h|--h|--help|-help)  "$usage" 1;;
             -H|--H|--HELP|-HELP)  "$usage" 1;;
             --Help|-Help)         "$usage" 1;;
+            -f|--f|--format)      opts['format']=$2; shift 2;;
             -o|--o|--output)      opts['output']="$2"; shift 2;;
             --)                 shift; break;;
         esac
     done
     
-    local val
-    if [ ${#opts[*]} -gt 0 ]; then
-        local -i i=0
-        for val in "${!opts[@]}"; do
-            [ $(( i++ )) -gt 0 ] && echo -n ' '
-            printf '['\''%s'\'']='\''%s'\' "$val" "${opts[$val]}"
-        done
-    fi
-    echo
-    if [ $# -gt 0 ]; then
-        for val in "$@"; do
-            echo "$val"
-        done
-    fi
+    appenv.results "$@"
 }
 
 #----------------------------------------------------------------------------------------------
-function formatTextReport()
+function registryReport.formatTextReport()
 {
-    declare -r TOOLS="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )" 
+    local -r TOOLS="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )" 
 
     docker run --rm \
                --volume "$TOOLS":/home/groovy/scripts \
-               --environment "JSON=registryReport.json" \
+               --volume "/tmp:/tmp" \
+               -e "JSON=/tmp/reportCatalog.json" \
                --workdir /home/groovy/scripts \
                groovy:2.6-jre-alpine \
                groovy registryReport.groovy  
 }
 
 #----------------------------------------------------------------------------------------------
+function registryReport.reportCatalog()
+{
+    local -A opts
+    eval opts=( ${1:?} )
+    readonly opts
+    [ $# -gt 0 ] && shift
+
+    if [ "${opts['format']}" = 'json' ]; then
+        if [ "${opts['output']:-}" ]; then
+            registry.reportCatalogAsJson "$@" > "${opts['output']}"
+        else
+            registry.reportCatalogAsJson "$@"
+        fi
+    else
+        registry.reportCatalogAsJson "$@" > /tmp/reportCatalog.json
+        if [ "${opts['output']:-}" ]; then
+            registryReport.formatTextReport /tmp/reportCatalog.json > "${opts['output']}"
+        else
+            registryReport.formatTextReport /tmp/reportCatalog.json
+        fi
+#        rm /tmp/reportCatalog.json
+    fi
+}
+
+#----------------------------------------------------------------------------------------------
 
 declare -i status
 declare -a args
-declare fn=registry.reportCatalog
 
 declare loader="$(dirname "${BASH_SOURCE[0]}")/libs/appenv.bashlib"
 if [ ! -e "$loader" ]; then
@@ -81,6 +101,6 @@ if [ ! -e "$loader" ]; then
     exit 1
 fi
 source "$loader"
-appenv.loader "$fn"
-args=( $( my.cmdLineArgs "$@" ) ) && status=$? || status=$?
-[ $status -eq 0 ] && "$fn" ${args[@]}
+appenv.loader 'registry.reportCatalogAsJson'
+args=( $( registryReport.cmdLineArgs "$@" ) ) && status=$? || status=$?
+[ $status -eq 0 ] && registryReport.reportCatalog ${args[@]}

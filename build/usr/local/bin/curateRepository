@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #----------------------------------------------------------------------------------------------
-function my.usage()
+function cyrateRepository.usage()
 {
     local -i exit_status=${1:-1}
 
@@ -20,9 +20,9 @@ EOF
 }
 
 #----------------------------------------------------------------------------------------------
-function my.cmdLineArgs()
+function cyrateRepository.cmdLineArgs()
 {
-    local usage='my.usage'
+    local usage='cyrateRepository.usage'
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
@@ -56,10 +56,45 @@ function my.cmdLineArgs()
 }
 
 #----------------------------------------------------------------------------------------------
+function curateRepository.main()
+{
+    local -A opts
+    eval opts=( $1 )
+    readonly opts
+    shift
+
+    local -a catalog
+    mapfile -t catalog < <(registry.matchRepos "$@" | sort)
+    [ "${#catalog[*]}" -gt 0 ] || trap.die 'invalid repository passed to curateRepository.main'
+
+    # remove latest to keep all working images
+    unset 'catalog[${#catalog[*]}-1]'
+
+    [ "${#catalog[*]}" -gt 0 ] || return 0
+
+    local name
+    for name in "${#catalog[@]}"; do
+        local digests="$(registry.digests "$name")"
+        [ "$digests" ] || continue
+
+        if [ "$(jq '.|length' <<< "$digests")" -gt 1 ]; then
+            local json createTime digest
+            local -a tags
+
+            # remove all but last image
+            for ((i=0; i < $(jq '.|length -1' <<< "$digests"); i++)); do
+                json=$(jq ".[$i]" <<< "$digests")
+                digest=$(jq -r '.digest' <<< "$json")
+                registry.deleteImage "$name" "$digest"
+            done
+        fi
+    done
+}
+
+#----------------------------------------------------------------------------------------------
 
 declare -i status
 declare -a args
-declare fn=registry.curateRepository
 
 declare loader="$(dirname "${BASH_SOURCE[0]}")/libs/appenv.bashlib"
 if [ ! -e "$loader" ]; then
@@ -67,6 +102,6 @@ if [ ! -e "$loader" ]; then
     exit 1
 fi
 source "$loader"
-appenv.loader "$fn"
-args=( $( my.cmdLineArgs "$@" ) ) && status=$? || status=$?
-[ $status -eq 0 ] && "$fn" ${args[@]}
+appenv.loader
+args=( $( cyrateRepository.cmdLineArgs "$@" ) ) && status=$? || status=$?
+[ $status -eq 0 ] && curateRepository.main ${args[@]}

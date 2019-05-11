@@ -8,7 +8,7 @@ function appenv.loader()
 
     if [ "$(env | grep -c "BASH_FUNC_${fn}%%")" -eq 0 ]; then
         top="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-        if [ "$top" = '/usr/local/bin' ] && [ -e /usr/local/crf/bin/loadLibraries.sh ]; then
+        if [ "$top" = '/usr/local/bin/libs' ] && [ -e /usr/local/crf/bin/loadLibraries.sh ]; then
             source /usr/local/crf/bin/loadLibraries.sh
             TOP="$(pwd)"
         elif [ -e "${top}/loadLibraries.sh" ]; then
@@ -24,5 +24,26 @@ function appenv.loader()
         fi
     else
         TOP=/opt
+    fi
+}
+
+#----------------------------------------------------------------------------------------------
+function appenv.results()
+{
+    local val
+    if [ ${#opts[*]} -gt 0 ]; then
+        local -i i=0
+        for val in "${!opts[@]}"; do
+            [ $(( i++ )) -gt 0 ] && echo -n ' '
+            printf '['\''%s'\'']='\''%s'\' "$val" "${opts[$val]}"
+        done
+        echo
+    else
+        echo "['dummy']=0"
+    fi
+    if [ $# -gt 0 ]; then
+        for val in "$@"; do
+            echo "$val"
+        done
     fi
 }
