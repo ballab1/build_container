@@ -7,7 +7,7 @@ function my.usage()
 
     cat >&2 << EOF
 Usage:
-    $progname [ -h | --help ] 
+    $progname [ -h | --help ]
               [ -f | --force ]
               [ -c | --console ]
               [ --logdir <logDir> ]
@@ -20,7 +20,7 @@ Usage:
         -h --help                  Display a basic set of usage instructions
         -c --console               log build info to conolse : default is to log to logdir and just display summary on cpnsole
         -f --force                 force build : do not check if fingerprint exists locally or in registry
-           --logdir                log directory. If not specified, defalts to 
+           --logdir                log directory. If not specified, defalts to
         -l --logfile <logName>     log build results to <logName>. Defaults to build.YYYYMMDDhhmmss.log
         -o --os <osName>           specify OS <osName> that will be used. Default all OS types defined
         -p --push                  always push image to regitry
@@ -46,7 +46,7 @@ function my.cmdLineArgs()
     local -A opts=()
     opts['base']="$(readlink -f "$base")"
     opts['logdir']="${opts['base']}/logs"
-    opts['logfile']="build.$(date +"%Y%m%d%H%M%S").log"
+    opts['logfile']="logs/build.$(date +"%Y%m%d%H%M%S").log"
     opts['conlog']=0
 
     while true; do
@@ -63,7 +63,7 @@ function my.cmdLineArgs()
             --)                   shift; break;;
         esac
     done
-    
+
     appenv.results "$@"
 }
 
@@ -82,4 +82,4 @@ source "$loader"
 appenv.loader "$fn"
 
 args=$( my.cmdLineArgs "$TOP" "$@" ) && status=$? || status=$?
-[ $status -eq 0 ] && "$fn" ${args[@]} 
+[ $status -eq 0 ] && "$fn" ${args[@]}
