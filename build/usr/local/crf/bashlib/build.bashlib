@@ -23,6 +23,9 @@ function build.all()
 
 
     VERSIONS_DIRECTORY="${top}/versions"
+    local -a files=()
+    mapfile -t files < <(ls -1 "$VERSIONS_DIRECTORY" | grep -vF '.' ||:)
+    [ "${#files[*]}" -eq 0 ] && trap.die "No version information available."
 
 
     local updateTo
@@ -47,13 +50,16 @@ function build.all()
     echo
     echo
 
+    local -i status=0
     local request_cbf="${CBF_VERSION:-}"
     for containerOS in "${OSes[@]}"; do
         [ ${containerOS:-} ] || continue
         [ -e "$VERSIONS_DIRECTORY/$containerOS" ] || continue
         [ "${request_cbf:-}" ] || CBF_VERSION="$cbf_version"
 
-        (build.containersForOS "$containerOS" "${userInput[@]:-}") || break    # run in separate shell to avoid "VERSIONS" conflicting
+        # run in separate shell to avoid "VERSIONS" conflicting
+        (build.containersForOS "$containerOS" "${userInput[@]:-}") && status=$? || status=$?
+        [ "$status" -ne 0 ] && break
     done
 
 
@@ -76,6 +82,7 @@ function build.all()
                      'overall build'
 
     [ -d "$logDir" ] && [ $(ls -1A "$logDir" | wc -l) -gt 0 ] || rmdir "$logDir"
+    return $status
 }
 
 #----------------------------------------------------------------------------------------------
@@ -168,6 +175,7 @@ function build.containersForOS()
 
     local -i status=0
     while read -r dir; do
+        [ $status -eq 0 ] || continue
         if [ ! -d "$dir" ]; then
             echo "invalid project directory: $dir"
             continue
@@ -176,8 +184,8 @@ function build.containersForOS()
         pushd "$dir" >/dev/null
         build.module "$containerOS" && status=$? || status=$?
         popd >/dev/null
-        [ $status -eq 0 ] || break
-    done< <( build.verifyModules "$containerOS" $(printf '%s\n' "${requestModules[@]}") )
+        [ $status -ne 0 ] && break
+    done< <( build.verifyModules "$containerOS" $(printf '%s\n' "${requestModules[@]}") && status=$? || status=$?)
 
     exec 3>&-   # close special stdout
 
@@ -461,18 +469,28 @@ function build.module()
     export CONTAINER_GIT_REFS="($(git.refs))"
     export CONTAINER_GIT_URL="$(git.remoteUrl)"
     export CONTAINER_ORIGIN="$(git.origin)"
-    export CONTAINER_PARENT="$(build.getImageParent "$config" 'unique')"
 
 
     # generate fingerprint from all our dependencies
     local branch=$(git.branch)
+    if [ "$branch" = 'HEAD' ]; then
+        local -a branches
+        mapfile -t branches < <(git log -n1 --oneline --decorate | \
+                                sed -e 's/[^\(]*(\([^\)]*\)).*/\1/' -e 's:origin/::g' -e 's:,::g' -e 's|tag:||g' -e 's|HEAD||g' | \
+                                awk '{if(length($0)>0) {print $0}}' RS=' '| \
+                                sort -u | \
+                                awk '{if(length($0)>0) {print $0}}')
+        [ "${#branches[0]}" -eq 0 ] && return 1
+        branch="${branches[0]}"
+    fi
     export BASE_TAG="${BASE_TAG:-${branch//\//-}}"
-    local -r dependencies="$(build.dependencyInfo "$config")"
-    export CONTAINER_FINGERPRINT="$( sha256sum <<< "$dependencies" | cut -d' ' -f1 )"
+    export CONTAINER_PARENT="$(build.getImageParent "$config" 'unique')"
 
     local taggedImage="$(eval echo $(jq '.image?' <<< $config))"
-    [ "$branch" = 'HEAD' ] && term.log 'git.tag returned HEAD for '$image  'warn'
     taggedImage="${taggedImage%:*}:${BASE_TAG}"
+
+    local -r dependencies="$(build.dependencyInfo "$config")"
+    export CONTAINER_FINGERPRINT="$( sha256sum <<< "$dependencies" | cut -d' ' -f1 )"
 
     echo
     echo -n 'building '
@@ -507,18 +525,20 @@ function build.module()
         # this on Jenkins
         :> "$PROGRESS_LOG"
         local logBase="${logDir}/${dir}.${CONTAINER_OS}"
-        build.logInfo 'include_time' >"${logBase}.out"
-        (build.updateContainer "$compose_yaml" "$taggedImage" "$actualImage" "$CONTAINER_ORIGIN" 2>"${logBase}.err" | sed -E 's|\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]||g' >>"${logBase}.out") \
+        [ -f "${logBase}.out.log" ] && sudo rm "${logBase}.out.log"
+        [ -f "${logBase}.err.log" ] && sudo rm "${logBase}.err.log"
+        build.logInfo 'include_time' > "${logBase}.out.log"
+        (build.updateContainer "$compose_yaml" "$taggedImage" "$actualImage" "$CONTAINER_ORIGIN" 2>"${logBase}.err.log" | sed -E 's|\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]||g' >>"${logBase}.out.log") \
           && status=$? || status=$?
-        [[ $status -eq 9 || ! -s "${logBase}.out" ]] && rm "${logBase}.out"
-        [ -s "${logBase}.err" ] || rm "${logBase}.err"
+        [[ $status -eq 9 || ! -s "${logBase}.out.log" ]] && rm "${logBase}.out.log"
+        [ -s "${logBase}.err" ] || rm "${logBase}.err.log"
 
 
         if [ "${BUILD_URL:-}" ]; then
             # for Jenkins: show location of log files if they have any content
-            local log_display_base="${BUILD_URL}artifact/$logBase"
-            [ -s "${logBase}.out" ] && echo "    STDOUT log:  ${log_display_base}.out/*view*/"
-            [ -s "${logBase}.err" ] && echo "    STDERR log:  ${log_display_base}.err/*view*/"
+            local log_display_base="$(dirname $BUILD_URL)/$(lib.urlencode "$(basename "$BUILD_URL")")/artifact/$logBase"
+            [ -s "${logBase}.out.log" ] && echo "    STDOUT log:  ${log_display_base}.out.log/*view*/"
+            [ -s "${logBase}.err.log" ] && echo "    STDERR log:  ${log_display_base}.err.log/*view*/"
         fi
 
         if [ $status -ne 0 ] && [ $status -ne 9 ]; then
@@ -529,13 +549,13 @@ function build.module()
           echo
           echo  'STDOUT:'
           echo
-          tail -30 ${logBase}.out
+          tail -30 "${logBase}.out.log"
           echo
           echo '----------------------------------------------------------------------------------------------'
           echo
           echo  'STDERR:'
           echo
-          tail -30 ${logBase}.err
+          tail -30 "${logBase}.err.log"
           echo
           echo '----------------------------------------------------------------------------------------------'
         fi
@@ -692,14 +712,16 @@ function build.wrapper()
     [ "${opts['os']:-}" ]     && export CONTAINER_OS="${opts['os']}"
 
 
+    local -i status=0
     if [ "${opts['logfile']:-}" ]; then
         mkdir -p "$(dirname "${opts['logfile']}")"
         eval echo 'build.all "${opts['base']}" "${opts['logdir']}" "$@" 2>&1 | tee '"${opts['logfile']}"
-        build.all "${opts['base']}" "${opts['logdir']}" "$@" 2>&1 | tee "${opts['logfile']}" ||:
+        build.all "${opts['base']}" "${opts['logdir']}" "$@" 2>&1 | tee "${opts['logfile']}" && status=$? || status=$?
     else
         eval echo 'build.all "${opts['base']}" "${opts['logdir']}" "$@"'
-        build.all "${opts['base']}" "${opts['logdir']}" "$@"
+        build.all "${opts['base']}" "${opts['logdir']}" "$@" && status=$? || status=$?
     fi
+    return $status
 }
 
 #----------------------------------------------------------------------------------------------
