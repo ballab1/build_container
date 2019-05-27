@@ -1,0 +1,6 @@
+# core Packages
+
+declare -a PKGS=( curl
+                  docker
+                  sudo
+                  zip ) 

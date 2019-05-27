@@ -1,0 +1,6 @@
+# perl Packages
+
+declare -a PKGS=( libssh-dev
+                  perl
+                  perl-modules-5.26
+                  perl-openssl-defaults )

@@ -536,9 +536,9 @@ function build.module()
 
         if [ "${BUILD_URL:-}" ]; then
             # for Jenkins: show location of log files if they have any content
-            local log_display_base="$(dirname $BUILD_URL)/$(lib.urlencode "$(basename "$BUILD_URL")")/artifact/$logBase"
-            [ -s "${logBase}.out.log" ] && echo "    STDOUT log:  ${log_display_base}.out.log/*view*/"
-            [ -s "${logBase}.err.log" ] && echo "    STDERR log:  ${log_display_base}.err.log/*view*/"
+            local log_display_base="${BUILD_URL}artifact/$(basename "$logDir")/${dir}.${CONTAINER_OS}"
+            [ -s "${logBase}.out.log" ] && echo "    STDOUT log:     ${log_display_base}.out.log/*view*/"
+            [ -s "${logBase}.err.log" ] && echo "    STDERR log:     ${log_display_base}.err.log/*view*/"
         fi
 
         if [ $status -ne 0 ] && [ $status -ne 9 ]; then
