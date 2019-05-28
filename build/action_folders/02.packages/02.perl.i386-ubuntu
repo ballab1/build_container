@@ -1,0 +1,4 @@
+# perl Packages
+
+declare -a PKGS=( perl-openssl-defaults
+                  'g++' )

@@ -1,7 +1,6 @@
 version: '3.3'
 
 # repo: https://github/ballab1/build_container.git
-# containerOS: alpine
 
 services:
     builder:

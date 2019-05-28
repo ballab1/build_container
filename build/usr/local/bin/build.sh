@@ -82,4 +82,5 @@ source "$loader"
 appenv.loader "$fn"
 
 args=$( my.cmdLineArgs "$TOP" "$@" ) && status=$? || status=$?
-[ $status -eq 0 ] && "$fn" ${args[@]}
+[ $status -eq 0 ] || exit $status
+"$fn" ${args[@]}
