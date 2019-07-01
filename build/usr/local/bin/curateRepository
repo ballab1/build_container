@@ -1,58 +1,498 @@
 #!/bin/bash
 
+#declare USE_PROCESS_SUBSTITUTION=''
+declare -r grey='\e[90m'
+declare -r white='\e[97m'
+declare -r reset='\e[0m'
+declare -i DO_DELETE=0
+declare -A IMAGES_TO_DELETE=()
+declare -A REPO_DIGESTS=()
+
+declare -i IS_DEBUG=${DEBUG:-0}
+declare -i INCLUDE_FINGERPRINT=0
+declare -i IS_QUIET=0
+declare -i REPO_END=4294967295
+declare -i REPO_KEEPTAGS=0
+declare -i REPO_START=0
+declare -i MAX_IMAGES_TO_KEEP=10
+declare -i TAG_ALLREPOS=0
+
 #----------------------------------------------------------------------------------------------
-function cyrateRepository.usage()
+function curateRepository.usage()
 {
     local -i exit_status=${1:-1}
+    local -r progname="$( basename "${BASH_SOURCE[0]}" )"
 
     cat >&2 << EOF
+
+Perform curation operations on a docker repository: $(registry.SERVER)
+
 Usage:
-    $progname [ -h|--help ] | [ <repoName> <repoName> <repoName> ]
+    $progname [ -h|--help ] [ -q|--quiet ]
+              | [ -d|--delete [ --max <numberOfImages> | --start startTime [ --end endTime ] [ --keepTags ] ] <regex>[:<regex>] <regex>[:<regex>] <regex>[:<regex>]
+                              | image@digest ]
+              | [ -g|--getRemoteImage <imageName> <imageName> <imageName> ]
+              | [ -p|--pushImage [ --fingerprint  ] <imageName> <imageName> <imageName> ]
+              | [ -r|--rename <srcImageName> <dstImageName> ]
+              | [ -t|--tag <regex>[:<regex>] [ --allRepos ] ]
 
     Common options:
         -h --help              Display a basic set of usage instructions
+        -q --quiet             Do not show progress info
+        -g --getRemoteImage    Get one or more images from some remote, and push to the default repository
+        -d --delete            Delete one or more images by specifying <regex>:<regex> - see 'usage examples'
+              --keepTags : delete a range of images in a repo by specifying "max # images" + keepTags
+              --max      : delete a range of images in a repo by specifying "max # images"
+              --start    : delete a range of images in a repo by specifying [start] <  > [end]
+                         : delete images by specifying image@digest
+        -p --pushImage         Push a retained image
+        -r --rename            Rename an image
+        -t --tag               Delete one or more tags - see 'usage examples'
+        -y --confirm           Confirm action, otherwise do not delete anything
 
-    Curate a docker repository, where <repoName> is its name  
+    all registry references '$(registry.SERVER)' are automatically stripped from images and/or repos 
 
+    Usage examples:......................................................................|....................................................................................
+        --delete :  delete one or more images and/or repos by specifying <regex>:<regex> |   --rename : rename an image
+            delete an image by specifying image@sha256:digest                            |      specify src_image and dst_image
+            delete specific images across multiple repos by specifying <regex>:<regex>   |      specify src_image<regex>, srcTag and dstTag on local system
+              delete an image by specifying image:tag                                    |      specify src_image<regex>, srcTag and dstTag in Registry
+              delete a range of images in a repo by specifying image:<regex>             |      specify src_image<regex>, srcTag and dstTag in both Registry and local system
+              delete a repo by specifying image                                          |
+              delete a repo by specifying image:*                                        |   --tag : delete one or more tags
+              delete multiple repos by specifying <regex>                                |      delete tag in a specific repo
+              delete images in all repos matching *:tag                                  |      delete tag in all repos
+            delete a range of images in a repo by specifying "max # images"              |
+            delete a range of images in a repo by specifying "max # images" + keepTags   |   --pushImage : push a retained image
+            delete a range of images in a repo by specifying [start]< createTime >[end]  |      
+                                                                                         |   --curation : remove unused images from prior versions
+                                                                                         |
 
 EOF
     exit "$exit_status"
 }
 
 #----------------------------------------------------------------------------------------------
-function cyrateRepository.cmdLineArgs()
+function curateRepository.cmdLineArgs()
 {
-    local usage='cyrateRepository.usage'
+    local usage='curateRepository.usage'
 
     # Parse command-line options into above variable
+    local -r longOpts='help,Help,HELP,allRepos,confirm_delete,end:,delete,fingerprint,getRemoteImage,keepTags,max:,pushImage,quiet,rename,start:,tag'
+    local -r shortOpts='Hhade:fgkm:pqrs:ty'
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
-    local -r options=$(getopt --longoptions "help,Help,HELP" --options "Hh" --name "$progname" -- "$@") || "$usage" $?
+    local -r options=$(getopt --longoptions "$longOpts" --options "$shortOpts" --name "$progname" -- "$@") || "$usage" $?
     eval set -- "$options"
 
-    local -A opts=()
+    local -A opts=(['oper']='curateRepository.usage')
     while true; do
         case "${1:-}" in
-            -h|--h|--help|-help)  "$usage" 1;;
-            -H|--H|--HELP|-HELP)  "$usage" 1;;
-            --Help|-Help)         "$usage" 1;;
-            --)                 shift; break;;
+            -h|-H|--h|--H|-help|-Help|-HELP|--help|--Help|--HELP)
+                opts['oper']='curateRepository.usage'
+                shift;;
+
+            -d|--delete)
+                opts['oper']='curateRepository.delete'
+                opts['delete']=1
+                shift;;
+
+            -g|--getRemoteImage)
+                opts['oper']='curateRepository.getImage'
+                shift;;
+
+            -p|--pushImage)
+                opts['oper']='curateRepository.pushImage'
+                shift;;
+
+            -r|--rename)
+                opts['oper']='curateRepository.renameImage'
+                shift;;
+
+            -t|--tag)
+                opts['oper']='curateRepository.deleteTagInSpecificRepo'
+                shift;;
+
+            -a|--allRepos)
+                opts['all']=1
+                opts['oper']='curateRepository.deleteTagInAllRepos'
+                shift;;
+
+            -e|--end)
+                opts['end']="$(jq 'fromdate' '"'$2'"')"
+                opts['oper']='curateRepository.deleteRangeOfImagesInRepoBySpecifyingStartEndTime'
+                opts['delete']=1
+                shift 2;;
+
+            -f|--fingerprint)
+                opts['fingerprint']=1
+                opts['oper']='curateRepository.pushImage'
+                shift;;
+
+            -k|--keepTags)
+                opts['keepTags']=1
+                opts['oper']='curateRepository.deleteRangeOfImagesInRepoBySpecifyingMaxNumberOfImagesAndKeepTags'
+                opts['delete']=1
+                shift;;
+
+            -m|--max)
+                opts['max']=$2
+                opts['oper']='curateRepository.deleteRangeOfImagesInRepoBySpecifyingMaxNumberOfImages'
+                opts['delete']=1
+                shift 2;;
+
+            -q|--quiet)
+                opts['quiet']=1
+                shift;;
+
+            -s|--start)
+                opts['start']="$(jq 'fromdate' '"'$2'"')"
+                opts['oper']='curateRepository.deleteRangeOfImagesInRepoBySpecifyingStartEndTime'
+                opts['delete']=1
+                shift 2;;
+
+            -y|--confirm_delete)
+                opts['do_delete']=1
+                shift;;
+
+            --)
+                shift
+                break;;
         esac
     done
-    
-    local val
-    if [ ${#opts[*]} -gt 0 ]; then
-        local -i i=0
-        for val in "${!opts[@]}"; do
-            [ $(( i++ )) -gt 0 ] && echo -n ' '
-            printf '['\''%s'\'']='\''%s'\' "$val" "${opts[$val]}"
+
+    if [ ${IS_DEBUG:-0} -gt 0 ]; then
+        for i in "${!opts[@]}"; do
+           printf '%s: %s\n' $i "${opts[$i]}" >&2
         done
     fi
+#        rename)
+#            [ "${#opts[*]}" -ne 1 ] && trap.die 'invalid arguments - too many options specified'
+#        tag)
+#            [ -z "${opts['all']:-}" ] && [ "${#opts[*]}" -ne 1 ] && trap.die 'invalid arguments provided'
+#        *)
+#            trap.die 'invalid arguments: no option specified'
+#    [ "$#" -eq 0 ] && trap.die 'invalid arguments - must specify something!'
+
+    appenv.results $(curateRepository.removeRegistryReference "$@")
+    return 0
+}
+
+#----------------------------------------------------------------------------------------------
+function curateRepository.confirmImageDeletion()
+{
+    if [ "${#IMAGES_TO_DELETE[*]}" -eq 0 ]; then
+        term.elog 'no images to delete\n' 'warn'
+        return 0
+    fi
+
+    local image name digest
+    local -i status=0
+
+    term.elog '\nAbout to delete the following images:      <repo_name>@<digest> : <tags>\n'
+    for image in "${!IMAGES_TO_DELETE[@]}"; do
+        tags="${IMAGES_TO_DELETE[$image]}"
+        printf '    %s : %s\n' "$image" "$tags" | sort >&2
+    done
     echo
-    if [ $# -gt 0 ]; then
-        for val in "$@"; do
-            echo "$val"
+
+    local prompt='[Yes/No/All/Quit]'
+    [ "${#IMAGES_TO_DELETE[*]}" -eq 1 ] && prompt='[Yes/No]'
+    for image in "${!IMAGES_TO_DELETE[@]}"; do
+        repo="${image%@*}"
+	digest="${image##*@}"
+
+        if [ "${DO_DELETE:-0}" -eq 0 ]; then
+            echo -en "Delete $image $prompt ? "
+            local yesno='n'
+            read yesno
+            echo
+            yesno="${yesno,,}"
+            [ "${yesno:0:1}" = 'n' ] && continue
+            [ "${yesno:0:1}" = 'q' ] && break
+            [ "${yesno:0:1}" = 'a' ] && DO_DELETE=1
+        fi
+        registry.deleteImage "$repo" "$digest" || status=$?
+    done
+    echo
+    IMAGES_TO_DELETE=()
+    return $status
+}
+
+#----------------------------------------------------------------------------------------------
+function curateRepository.addImageToList()
+{
+    local name=${1:?}
+    local tags=${2:?}
+    
+    if [ "${IMAGES_TO_DELETE[$name]:-}" ]; then
+        IMAGES_TO_DELETE[$name]+=( "$tags" )
+    else
+        IMAGES_TO_DELETE[$name]="$tags"
+    fi
+}
+
+#----------------------------------------------------------------------------------------------
+function curateRepository.catalogIterator()
+{
+    local fn=${1:?}
+    shift
+    local -a requests=( "$@" )
+    [ "${#requests[*]}" -gt 0 ] || requests=( '.+' )
+
+    local -a requests
+#    if [ "$USE_PROCESS_SUBSTITUTION" ]; then
+#        mapfile -t requests < <(registry.catalog | grep -E -f <(printf '%s\n' "${requests[@]}") | sort ||:)
+#    else
+        local tmpfile="$(mktemp)"
+        printf '%s\n' "${requests[@]}" > "$tmpfile"
+        mapfile -t catalog < <(registry.catalog | grep -E -f "$tmpfile" ||:) # ignore errors
+        rm "$tmpfile"
+#    fi
+
+    if [ "${#catalog[*]}" -eq 0 ]; then
+        trap.elog 'No content specified' 'warn'
+        return 1
+    fi
+
+    local -i status=0
+    for repo in "${catalog[@]}"; do
+        "$fn" "$repo" || status=1
+        [ $status -ne 0 ] && return $status
+    done
+    return $status
+}
+
+#----------------------------------------------------------------------------------------------
+function curateRepository.delete()
+{
+    local -ra requests=( "$@" )
+    term.elog "delete images in $(registry.SERVER) by specifying regex : $*"'\n' 'grey'
+
+    local -i status=0
+    local id name repo tag digest
+    local -a tags catalog
+    local -A digests
+    
+    catalog="$(registry.catalog)"
+    for name in "${requests[@]}"; do
+
+        if [[ "$name" = *@sha256:* ]]; then
+	    repo="${name%@*}"
+	    digest="${name##*@}"
+            curateRepository.addImageToList "$name" "@$digest"
+            continue
+        fi
+
+        repo='^'"${name%:*}"'$'
+        if [[ "$name" = *:* ]]; then
+            tag='^'"${name##*:}"'$'
+        else
+            tag='^.*$'
+        fi
+
+        mapfile -t repos < <(grep -Es "$repo" <<< "$catalog" ||:)
+        [ "${#repos[*]}" -gt 0 ] || continue
+
+        for repo in "${repos[@]}"; do
+
+            eval "digests=( $(curateRepository.digests "$repo" 'notimes' | jq -r '.[]|.tags|=join(",")|"[\(.digest)]=\(.tags)"') )"
+            [ "${#digests[*]}" -le 0 ] && continue
+
+            for digest in "${!digests[@]}"; do
+                grep -Esq "$tag" <<< ${digests[$digest]} && curateRepository.addImageToList "${repo}@$digest" "${digests[$digest]}"
+            done
+        done
+    done
+    return 0
+}
+
+#----------------------------------------------------------------------------------------------
+# deleting images within a repo : delete a range of images in a repo by specifying "max # images"
+function curateRepository.deleteRangeOfImagesInRepoBySpecifyingMaxNumberOfImages()
+{
+    local -r image=${1:?}
+    term.elog "delete range of images in $(registry.SERVER) by specifying max number of images : $*"'\n' 'grey'
+
+    local -r name="${image%:*}"
+    local json="$(curateRepository.digests "$name" )"
+    [ "${#json}" -gt 0 ] || trap.die "repository: ${name} - does not exist"
+
+    local -i status=0
+    local -ir imageCount=$(jq 'length' <<< "$json")
+    if [ $imageCount -ge $MAX_IMAGES_TO_KEEP ]; then
+        local -ir delta=$(( imageCount - MAX_IMAGES_TO_KEEP + 1 ))
+        [ $delta -le 1 ] || term.log "    repo ${name} contains ${delta} images over recommended limit"'\n' 'lt_yellow'
+        json=$(jq -r "sort_by(.createTime|fromdate)[0:${delta}]" <<< "$json")
+
+        local -i idx
+        local digest image_json tags
+        for (( idx=0; idx < delta; idx++ )); do
+            image_json="$(jq '.['$idx']' <<< "$json")"
+            digest=$(jq -r '.digest' <<< "$image_json")
+            tags=$(jq -r '.tags|join(",")' <<< "$image_json")
+            curateRepository.addImageToList "${name}@$digest" "$tags" || status=1
         done
     fi
+    return $status
+}
+
+#----------------------------------------------------------------------------------------------
+# deleting images within a repo : delete a range of images in a repo by specifying "max # images" + keepTags
+function curateRepository.deleteRangeOfImagesInRepoBySpecifyingMaxNumberOfImagesAndKeepTags()
+{
+    local -r image=${1:?}
+    term.elog "delete range of images in $(registry.SERVER) by specifying max number of images and keepTags : $*"'\n' 'grey'
+
+    local -r name="${image%:*}"
+    local json="$(curateRepository.digests "$name" )"
+    [ "${#json}" -gt 0 ] || trap.die "repository: ${name} - does not exist"
+
+    local -i status=0
+    local -ir imageCount=$(jq '[.[]|select((.tags|length) == 1)]|length' <<< "$json")
+    if [ $imageCount -ge $MAX_IMAGES_TO_KEEP ]; then
+        local -ir delta=$(( imageCount - MAX_IMAGES_TO_KEEP + 1 ))
+        [ $delta -le 1 ] || term.log "    repo ${name} contains ${delta} images over recommended limit"'\n' 'lt_yellow'
+        json=$(jq -r "[.[]|select((.tags|length) == 1)]|sort_by(.createTime|fromdate)[0:${delta}]" <<< "$json")
+
+        local -i idx
+        local digest image_json tags
+        for (( idx=0; idx < delta; idx++ )); do
+            image_json="$(jq '.['$idx']' <<< "$json")"
+            digest=$(jq -r '.digest' <<< "$image_json")
+            tags=$(jq -r '.tags|join(",")' <<< "$image_json")
+            curateRepository.addImageToList "${name}@$digest" "$tags" || status=1
+        done
+    fi
+    return $status
+}
+
+#----------------------------------------------------------------------------------------------
+# deleting images within a repo : delete a range of images in a repo by specifying [start] <=|<|>|>= [end]
+function curateRepository.deleteRangeOfImagesInRepoBySpecifyingStartEndTime()
+{
+    local -r image=${1:?}
+    term.elog "delete range of images in $(registry.SERVER) by specifying start time : $*"'\n' 'grey'
+
+    local -r name="${image%:*}"
+    local json="$(curateRepository.digests "$name")"
+    [ "${#json}" -gt 0 ] || trap.die "repository: ${name} - does not exist"
+
+    json=$(jq -r "sort_by(.createTime|fromdate)" <<< "$json")
+    local -ir imageCount=$(jq 'length' <<< "$json")
+
+    local -i createTime
+    local -i idx
+    local digest image_json tags
+
+    local -i status=0
+    for (( idx=0; idx < imageCount; idx++ )); do
+        image_json="$(jq '.['$idx']' <<< "$json")"
+        createTime=$(jq -r '.createTime|fromdate' <<< "$image_json")
+        [ "$createTime" -gt "${REPO_START:-}" ] && [ "$createTime" -lt "${REPO_END:-}"  ] && continue
+
+        digest=$(jq -r '.digest' <<< "$image_json")
+        tags=$(jq -r '.tags|join(",")' <<< "$image_json")
+        curateRepository.addImageToList "${name}@$digest" "$tags" || status=1
+    done
+    return $status
+}
+
+#----------------------------------------------------------------------------------------------
+# deleting repos : delete a repo by specifying image:*
+function curateRepository.deleteTagInSpecificRepo()
+{
+    local -r image=${1:?}
+    term.elog "delete specific tag from $(registry.SERVER) : $*"'\n' 'grey'
+
+    local -r name="${image%:*}"
+    local tag='^'"${image##*:}"'$'
+    local -r json="$(curateRepository.digests "$name" 'notimes' | jq -c 'select(.tags|any(test("'$tag'")))')"
+
+    local -a tags
+    mapfile -t tags < <(jq -r '.tags[]' <<< "${json}" )
+    [ "${#tags[*]}" -gt 0 ] || trap.die "repository: ${name} - does not exist"
+    tags=( $(printf '%s\n' "${tags[@]}" | grep -v "$tag") )
+
+    local -i status
+    if [ "${#tags[*]}" -eq 0 ]; then
+        # remove image (and all associated tags)
+        curateRepository.addImageToList "${name}@$(jq -r '.digest' <<< "$json")"  $tag
+        curateRepository.confirmImageDeletion || trap.die "failed to remove image: ${name}:$tag"
+    fi
+
+    # determine whether or not we need to pull a copy of image so we can restore other tags
+    local -i pulledImageExists=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -cH "$(registry.SERVER)$image" | cut -d ':' -f 2 ||:)
+    [ "$pulledImageExists" -gt 0 ] || curateRepository.run docker pull "$(registry.SERVER)$image"
+
+    # remove image (and all associated tags)
+    curateRepository.addImageToList "${name}@$(jq -r '.digest' <<< "$json")" $tag
+    curateRepository.confirmImageDeletion || trap.die "failed to remove image: ${name}:$tag"
+
+    # push image back using remaining tags
+    for tag in "${tags[@]}"; do
+        echo "pushing $(registry.SERVER)${name}:$tag"
+        curateRepository.run docker tag "$(registry.SERVER)$image" "$(registry.SERVER)${name}:$tag"
+        curateRepository.run docker push "$(registry.SERVER)${name}:$tag"
+        curateRepository.run docker rmi "$(registry.SERVER)${name}:$tag"
+    done
+
+    # remove local copy of image if it wasn't originaly local
+    [ "$pulledImageExists" -gt 0 ] || curateRepository.run docker rmi "$(registry.SERVER)$image"
+    return 0
+}
+
+#----------------------------------------------------------------------------------------------
+# delete tag in all repos
+function curateRepository.deleteTagInAllRepos()
+{
+    local -r image=${1:?}
+    term.elog "delete specific tag from all repos in $(registry.SERVER) : $*"'\n' 'grey'
+
+    local -r regex='^'"${image%:*}"'$'
+    local -r tagx='^'"${image##*:}"'$'
+
+
+    TAG_REGEX="$tagx"
+    local -i status=0
+    curateRepository.catalogIterator 'curateRepository.deleteTagInSpecificRepo' "$regex" && status=$? || status=$?
+    return $status
+}
+
+#----------------------------------------------------------------------------------------------
+function curateRepository.digests()
+{
+    local -r repo=${1:?}
+    local -r notimes=${2:-}
+
+    if [ -z "${REPO_DIGESTS[$repo]:-}" ]; then
+        [ $IS_QUIET -eq 0 ] && term.elog "retrieving digests for $repo"'\n' 'grey'
+        REPO_DIGESTS[$repo]="[$(registry.digests "$repo" $notimes)]"
+    fi
+    echo ${REPO_DIGESTS[$repo]}
+}
+
+#----------------------------------------------------------------------------------------------
+function curateRepository.getImage()
+{
+    local -r image=${1:?}
+    term.elog "Get one or more images from some remote, and push to $(registry.SERVER) : $*"'\n' 'grey'
+
+    local -i status=0
+
+    if [ -z "$(docker image ls -q $image)" ]; then
+        docker pull "$image" || status=$?
+        [ $status -ne 0 ] && return $status
+    fi
+
+    docker tag "$image" "$(registry.SERVER)${image##*/}" || status=$?
+    [ $status -eq 0 ] && docker push "$(registry.SERVER)${image##*/}" || status=$?
+    [ $status -ne 0 ] && return $status
+
+    docker rmi "$image" || status=$?
+    docker rmi "$(registry.SERVER)${image##*/}" || status=$?
+    [ $status -ne 0 ] && term.elog 'WARNING:  Failed to cleanup temporary images' 'warn'
+
+    return 0
 }
 
 #----------------------------------------------------------------------------------------------
@@ -63,38 +503,90 @@ function curateRepository.main()
     readonly opts
     shift
 
-    local -a catalog
-    mapfile -t catalog < <(registry.matchRepos "$@" | sort)
-    [ "${#catalog[*]}" -gt 0 ] || trap.die 'invalid repository passed to curateRepository.main'
+    [ "${opts['all']:-}" ] &&  TAG_ALLREPOS=1
+    [ "${opts['end']:-}" ] &&  REPO_END=${opts['end']}
+    [ "${opts['keepTags']:-}" ] && REPO_KEEPTAGS=1
+    [ "${opts['max']:-}" ] && MAX_IMAGES_TO_KEEP=${opts['max']}
+    [ "${opts['quiet']:-}" ] && IS_QUIET=1
+    [ "${opts['start']:-}" ] && REPO_START=${opts['start']}
+    [ "${opts['fingerprint']:-}" ] && INCLUDE_FINGERPRINT=1
+    [ "${opts['do_delete']:-}" ] && DO_DELETE=1
+ 
 
-    # remove latest to keep all working images
-    unset 'catalog[${#catalog[*]}-1]'
+    DEBUG=1
+    local status=0
+    "${opts['oper']:-}" "$@" && status=$? || status=$?
+    [ "${opts['delete']:-}" ] && [ $status = 0 ] && curateRepository.confirmImageDeletion && status=$? || status=$?
 
-    [ "${#catalog[*]}" -gt 0 ] || return 0
+    return $status
+}
 
-    local name
-    for name in "${#catalog[@]}"; do
-        local digests="$(registry.digests "$name")"
-        [ "$digests" ] || continue
+#----------------------------------------------------------------------------------------------
+function curateRepository.pushImage()
+{
+    local -i status=0
+    term.elog "push images to $(registry.SERVER) :  $*"'\n' 'grey'
 
-        if [ "$(jq '.|length' <<< "$digests")" -gt 1 ]; then
-            local json createTime digest
-            local -a tags
+    local image
+    local -a images=()
+    for image in "$@"; do
+        images+=( $(registry.SERVER)$image )
+    done
+    docker.pushRetained $INCLUDE_FINGERPRINT "${images[@]}" && status=$? || status=$?
+    return $status
+}
 
-            # remove all but last image
-            for ((i=0; i < $(jq '.|length -1' <<< "$digests"); i++)); do
-                json=$(jq ".[$i]" <<< "$digests")
-                digest=$(jq -r '.digest' <<< "$json")
-                registry.deleteImage "$name" "$digest"
-            done
-        fi
+#----------------------------------------------------------------------------------------------
+function curateRepository.removeRegistryReference()
+{
+    for id in "$@"; do
+        echo ${id#$(registry.SERVER)}
     done
 }
 
 #----------------------------------------------------------------------------------------------
+# rename image : specify src_image and dst_image
+function curateRepository.renameImage()
+{
+    local src=${1:?}
+    local dst=${2:?}
+    term.elog "rename local images and push them to $(registry.SERVER) : $*"'\n' 'grey'
+
+    local srcName="${src%:*}"
+    local srcTag="${src##*:}"
+    [ "${srcName:-}" ] && [ "${srcTag:-}" ] || trap.die "Invalid $src specified"
+
+    local dstName="${dst%:*}"
+    local dstTag="${dst##*:}"
+
+    [ "${dstTag:-}" ] || dstTag="$srcTag"
+    [ "${dstName:-}" ] && [ "$dstName" != "$dstTag" ] || $dstName="$srcName"
+    [ "$srcName" != "$dstName" ] || [ "$srcTag" != "$dstTag" ] || trap.die "$src & $dst specify same image"
+
+    local exists=$(docker image ls --quiet "$(registry.SERVER)$src")
+    [ "${exists:-}" ] || curateRepository.run docker pull "$(registry.SERVER)$src"
+    curateRepository.run docker tag "$(registry.SERVER)$src" "$(registry.SERVER)${dstName}:$dstTag"
+    docker.pushRetained 0 "$(registry.SERVER)${dstName}:$dstTag"
+    [ "${exists:-}" ] || curateRepository.run docker rmi "$(registry.SERVER)$src"
+    curateRepository.deleteTagInSpecificRepo "$src"
+}
+
+#---------------------------------------------------------------------------------------------- 
+function curateRepository.run()
+{
+    [ $DEBUG -ne 0 ] && echo -e "${grey}$(printf '%s ' "$@")$reset"
+    eval $@ > /dev/null
+}
+
+#----------------------------------------------------------------------------------------------
+#
+#      MAIN
+#
+#----------------------------------------------------------------------------------------------
 
 declare -i status
 declare -a args
+declare -i DEBUG
 
 declare loader="$(dirname "${BASH_SOURCE[0]}")/libs/appenv.bashlib"
 if [ ! -e "$loader" ]; then
@@ -102,6 +594,8 @@ if [ ! -e "$loader" ]; then
     exit 1
 fi
 source "$loader"
-appenv.loader
-args=( $( cyrateRepository.cmdLineArgs "$@" ) ) && status=$? || status=$?
-[ $status -eq 0 ] && curateRepository.main ${args[@]}
+
+appenv.loader 'curateRepository.main'
+args=( $( curateRepository.cmdLineArgs "$@" ) ) && status=$? || status=$?
+[ $status -eq 0 ] && curateRepository.main "${args[@]}" && status=$? || status=$?
+exit $status

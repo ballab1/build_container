@@ -229,7 +229,9 @@ function build.dependencyInfo()
 
 
     # git tree hash
-    git.lsTree HEAD . | awk '{print $3}'
+    local dirty=' '
+    [ "$(git.status --porcelain)" ] && dirty='*'
+    echo "${dirty}$(sha256sum < <(git.lsTree HEAD .) | cut -d ' ' -f 1) $(basename $(pwd))"
 
     # resolve 'docker build.args' config (without reference to FROM_BASE) from docker-compose.yml
     set +u
@@ -326,20 +328,6 @@ function build.getImageParent()
         [ -z "${tag:-}" ] || [ "$tag" =  'null' ] || [ "$tag" = "${base##*:}" ] || base="${base%:*}:$tag"
     fi
     echo "$base"
-}
-
-#----------------------------------------------------------------------------------------------
-function build.jsonParentChild()
-{
-    local os=${1:-}
-
-    build.parentChild "$os" | jq '. as $data |
-        def dependentsOf($f): [ $data[]|select(.parent == $f)|.image ];
-        def parentsOf($f): [ $data[]|select(.image == $f)|.parent ];
-        def composeTree: [ $data[].parent ] | unique | map( {"image":.,"parent": parentsOf(.) } );
-        def dependentTree: [ $data[].image ] | unique | map( {"image":.,"dependents": dependentsOf(.) } );
-        def rootImages: composeTree[]|select(.parent|length == 0)|.image;
-        dependentTree'
 }
 
 #----------------------------------------------------------------------------------------------
@@ -480,7 +468,11 @@ function build.module()
                                 awk '{if(length($0)>0) {print $0}}' RS=' '| \
                                 sort -u | \
                                 awk '{if(length($0)>0) {print $0}}')
-        [ "${#branches[0]}" -eq 0 ] && return 1
+        if [ "${#branches[0]}" -eq 0 ]; then
+            term.elog "***ERROR: failure to determine current branch for $(git.repoName). Most likely on a detached HEAD"'\n' 'warn'
+            git log -8 --graph --abbrev-commit --decorate --all >&2
+            return 1
+        fi
         branch="${branches[0]}"
     fi
     export BASE_TAG="${BASE_TAG:-${branch//\//-}}"
@@ -528,7 +520,9 @@ function build.module()
         [ -f "${logBase}.out.log" ] && sudo rm "${logBase}.out.log"
         [ -f "${logBase}.err.log" ] && sudo rm "${logBase}.err.log"
         build.logInfo 'include_time' > "${logBase}.out.log"
-        (build.updateContainer "$compose_yaml" "$taggedImage" "$actualImage" "$CONTAINER_ORIGIN" 2>"${logBase}.err.log" | sed -E 's|\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]||g' >>"${logBase}.out.log") \
+        # - use 'sed' to strip color codes from "${logBase}.out.log"
+        (build.updateContainer "$compose_yaml" "$taggedImage" "$actualImage" "$CONTAINER_ORIGIN" 2>"${logBase}.err.log" \
+          | sed -E 's|\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]||g' >>"${logBase}.out.log") \
           && status=$? || status=$?
         [[ $status -eq 9 || ! -s "${logBase}.out.log" ]] && rm "${logBase}.out.log"
         [ -s "${logBase}.err" ] || rm "${logBase}.err.log"
@@ -549,13 +543,13 @@ function build.module()
           echo
           echo  'STDOUT:'
           echo
-          tail -30 "${logBase}.out.log"
+          [ -e "${logBase}.out.log" ] && tail -30 "${logBase}.out.log"
           echo
           echo '----------------------------------------------------------------------------------------------'
           echo
           echo  'STDERR:'
           echo
-          tail -30 "${logBase}.err.log"
+          [ -e "${logBase}.err.log" ] && tail -30 "${logBase}.err.log"
           echo
           echo '----------------------------------------------------------------------------------------------'
         fi
@@ -584,26 +578,6 @@ function build.module()
 }
 
 #----------------------------------------------------------------------------------------------
-function build.parentChild()
-{
-    local os=${1:-}
-
-    local -i index=0
-    local -r skip_builds_file='skip.build'
-    echo '['
-    while read -r dc_yaml; do
-        [ -e "$skip_builds_file" ] && [ $(grep -cH "$(dirname "$dc_yaml")" "$skip_builds_file" 2>/dev/null | cut -d':' -f2) -eq 0 ] || continue
-        local definedOS=$(grep -E '^#\s+containerOS:\s+' "$dc_yaml")
-        [ "${definedOS:-}" ] && [ $(grep -cH "$os" <<< "$definedOS" | awk -F ':' '{print $2}') -eq 0 ] && continue
-
-        (( index++ )) && echo -n ','
-        eval echo $(build.yamlToJson "$dc_yaml" | jq '.services[]|{parent: .build.args.FROM_BASE, image: .image}?|tojson')
-
-    done < <(find . -mindepth 2 -maxdepth 2 -name 'docker-compose.yml' | awk '{print substr($0,3)}')
-    echo ']'
-}
-
-#----------------------------------------------------------------------------------------------
 function build.updateContainer()
 {
     local -r compose_yaml=${1:?}
@@ -625,7 +599,7 @@ function build.updateContainer()
             elif [ "${BUILD_PUSH:-0}" != 0 ] || [ $(docker inspect "$taggedImage" | jq -r '.[].RepoDigests?|length') -eq 0 ]; then
                 doPush=1
             fi
-            [ $doPush -eq 0 ] || registry.push 0 "$taggedImage"
+            [ $doPush -eq 0 ] || docker.pushRetained 0 "$taggedImage"
             return 9
         fi
 
@@ -638,7 +612,7 @@ function build.updateContainer()
             build.logImageInfo "$taggedImage" "$compose_yaml"
             if [ "${BUILD_PUSH:-0}" != 0 ]; then
                 build.logger "pushing ${taggedImage} to registry"
-                registry.push 0 "$taggedImage"
+                docker.pushRetained 0 "$taggedImage"
             fi
             docker rmi "$actualImage"
             return 9
@@ -658,7 +632,7 @@ function build.updateContainer()
 
     if build.canPush "$revision"; then
         build.logger "pushing ${taggedImage} to registry"
-        registry.push 0 "$taggedImage"
+        docker.pushRetained 0 "$taggedImage"
     fi
     docker rmi "$actualImage"
     return 0
@@ -716,10 +690,10 @@ function build.wrapper()
     if [ "${opts['logfile']:-}" ]; then
         mkdir -p "$(dirname "${opts['logfile']}")"
         eval echo 'build.all "${opts['base']}" "${opts['logdir']}" "$@" 2>&1 | tee '"${opts['logfile']}"
-        build.all "${opts['base']}" "${opts['logdir']}" "$@" 2>&1 | tee "${opts['logfile']}" && status=$? || status=$?
+        (build.all "${opts['base']}" "${opts['logdir']}" "$@" 2>&1 | tee "${opts['logfile']}") && status=$? || status=$?
     else
         eval echo 'build.all "${opts['base']}" "${opts['logdir']}" "$@"'
-        build.all "${opts['base']}" "${opts['logdir']}" "$@" && status=$? || status=$?
+        (build.all "${opts['base']}" "${opts['logdir']}" "$@") && status=$? || status=$?
     fi
     return $status
 }
