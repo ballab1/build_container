@@ -28,9 +28,9 @@ function __init.loader() {
 
     if [ "${#__libs[*]}" -gt 0 ]; then
         echo -en "    loading project libraries from $__libdir: \e[35m"
-        [ "${DEBUG:-}" ] && echo
+        [[ "${DEBUG:-}" || "${DEBUG_TRACE:-0}" -gt 0 ]] && echo
         for __lib in "${__libs[@]}"; do
-            if [ "${DEBUG:-}" ]; then
+            if [[ "${DEBUG:-}" || "${DEBUG_TRACE:-0}" -gt 0 ]]; then
                 echo "        $__lib"
             else
                 echo -n " $(basename "$__lib")"
@@ -109,7 +109,7 @@ function __init.myExitHandler() {
     trap __init.rmTmpDir EXIT
 }
 
-if [ "${DEBUG:-}" ]; then
+if [[ "${DEBUG:-}" || "${DEBUG_TRACE:-0}" -gt 0 ]]; then
     __init.loader >&2
 else
     __init.loader &> /dev/null

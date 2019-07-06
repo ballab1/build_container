@@ -96,7 +96,14 @@ class CbfDownload:
     def __init__(self, lines):
         self.lines = lines
         self.versions = []
+        self.dict = {}
         self.name = None
+        self.file = ''
+        self.url = ''
+        self.remote_url = ''
+        self.parse(lines)
+
+    def parse(self, lines):
         i = 0
         for line in lines:
             i += 1
@@ -118,10 +125,15 @@ class CbfDownload:
                 elif matchobj.group(2) == 'remote_url':
                     self.remote_url = matchobj.group(3)
                 else:
-                    matchobj = re.search(r'sha256_(.*)', matchobj.group(2))
+                    key = matchobj.group(2)
+                    val = matchobj.group(3)
+                    matchobj = re.search(r'sha256_(.*)', key)
                     if matchobj:
                         self.versions.append(matchobj.group(1))
                         self.insert_at = i
+                    else:
+                        key = "${{{}['{}']}}".format(self.name, key)
+                        self.dict[key] = val
 
     def test(self, version):
         if version in self.versions:
@@ -129,16 +141,27 @@ class CbfDownload:
 #            self.insert_at = -1
             sys.exit(1)
 
-    def checksum(self, version):
+    def getUrl(self, version, versions):
+        url = self.remote_url
+        if len(url) == 0:
+            url = self.url
         vstring = '${' + self.name + "['version']}"
-        url = self.url
         url = url.replace(vstring, version)
+        for key,val in self.dict.iteritems():
+            vstring = "${{{}['{}']}}".format(self.name, key)
+            url = url.replace(vstring, val)
+        return versions.check(url)
+
+    def checksum(self, version, versions):
+        url = self.getUrl(version, versions)
         dlfile = tempfile.mktemp()
         try:
             cmd = 'wget --no-check-certificate --quiet --output-document {} {}'.format(dlfile, url)
             status = os.system(cmd)
             if status == 0:
                 sha256 = hashlib.sha256(open(dlfile, mode='rb').read())
+                if self.remote_url:
+                    self.upload(dlfile)
                 os.remove(dlfile)
                 newline = '{}[\'sha256_{}\']="{}"\n'.format(self.name, version, sha256.hexdigest())
                 return newline
@@ -146,14 +169,48 @@ class CbfDownload:
             print 'failed to download from: ' + url
             sys.exit(1)
 
+    def upload(self, dlfile):
+        credentials = 'user:pwd'
+        md5Value = ''
+        sha1Value = ''
+        url = self.url
+#        cmd = 'curl --request PUT --location-trusted --silent --user {} --header "X-Checksum-Md5: {}" --header "X-Checksum-Sha1: {}" --upload-file "{}" "{}"'.format(credentials, md5Value, sha1Value, dlfile, url)
+#        status = os.system(cmd)
+#        if status != 0:
+#            print 'failed to upload to: ' + url
+        return
+
 
 class CbfVersions:
 
-    def __init__(self, vdir, vstring, version):
+    def __init__(self, vdir):
         self.vdir = vdir
-        self.vstring = vstring
-        self.version = version
-        self.regex = r'^(' + re.escape(self.vstring) + r')='
+        self.files = ['alpine', 'centos', 'fedora', 'ubuntu', 'i386-ubuntu']
+
+    def check(self, url):
+        while url.find('$') >= 0:
+            for osfile in self.files:
+                fname = os.path.join(self.vdir, osfile)
+                if os.path.isfile(fname):
+                    url = url
+                    with open(fname) as f:
+                        for line in f:
+                            matchobj = re.match(r"^\s*(\w+)=(.*)$", line, re.M)
+                            if matchobj is None:
+                                continue
+                            key = matchobj.group(1)
+                            val = matchobj.group(2)
+                            if url.find(key) < 0:
+                                continue
+                            vstring = '$' + key
+                            url = url.replace(vstring, val)
+                            if url.find(key) < 0:
+                                return url
+                            vstring = '${' + key + '}'
+                            url = url.replace(vstring, val)
+                            if url.find(key) < 0:
+                                return url
+        return url
 
     def test(self, line):
         matchobj = re.match(self.regex, line, re.M)
@@ -161,8 +218,11 @@ class CbfVersions:
             line = '{}={}\n'.format(self.vstring, self.version)
         return line
 
-    def update_file(self):
-        for osfile in ['alpine', 'centos', 'fedora', 'ubuntu', 'i386-ubuntu']:
+    def update_file(self, vstring, version):
+        self.vstring = vstring
+        self.version = version
+        self.regex = r'^(' + re.escape(self.vstring) + r')='
+        for osfile in self.files:
             fname = os.path.join(self.vdir, osfile)
             if os.path.isfile(fname):
                 update_file(fname, self)
@@ -214,7 +274,10 @@ class CbfDownloadFile:
         Constructor
         """
         self.download = args.download
-        self.version = args.version
+        version = args.version
+        version = version.strip('\"')
+        version = version.strip("\'")
+        self.version = version
         lines = []
         with open(args.download) as f:
             for line in f:
@@ -224,7 +287,7 @@ class CbfDownloadFile:
         self.vstring = cbf_file.version
 
 
-    def update_file(self):
+    def update_file(self, versions):
         i = 0
         self.cbf_file.test(self.version)
         download = self.cbf_file
@@ -234,43 +297,15 @@ class CbfDownloadFile:
         with open(tmpfile, 'w') as f:
             for line in download.lines:
                 if i == download.insert_at:
-                    f.write(download.checksum(self.version))
+                    f.write(download.checksum(self.version, versions))
                 i += 1
                 f.write(line)
             f.flush()
         return backup_file(self.download, tmpfile)
 
-
-class VersionUpdater:
-    """
-        CBF VersionUpdater class
-    """
+class GetArgs:
 
     def __init__(self):
-        """
-        Constructor
-            Create a Producer.
-
-        Returns:
-            A new instance of the KProducer class
-        """
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
-        # create file handler which logs even debug messages
-        fh = logging.FileHandler('version_updater.log')
-        fh.setLevel(logging.DEBUG)
-        # create console handler with a higher log level
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.ERROR)
-        # create formatter and add it to the handlers
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-        # add the handlers to the logger
-        self.logger.addHandler(fh)
-        self.logger.addHandler(ch)
-
-    def getargs(self):
         """
         Description:
             Parse the arguments given on command line.
@@ -289,9 +324,11 @@ class VersionUpdater:
         p.add_argument('-v', '--version', required=True, help='version to add to download file')
 
         args = p.parse_args()
-        return args
+        self.project = args.project
+        self.download = args.download
+        self.version = args.version
 
-    def validate_options(self, args):
+    def validate_options(self):
         """
         Description:
             Validate the correct arguments are provided and that they are the correct type
@@ -300,45 +337,73 @@ class VersionUpdater:
             ValueError: If request_type or request_status are not one of the acceptable values
 
         """
-
-        if args.project is None:
+        if self.project is None:
             raise ValueError('no project specified')
 
-        args.pdr_dir = os.path.dirname(os.path.abspath(__file__))
-        project_dir = os.path.join(args.pdr_dir, args.project)
+        self.pdr_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.join(self.pdr_dir, self.project)
         if not os.path.isdir(project_dir):
             raise ValueError('invalid project specified')
-        args.project_dir = project_dir
+        self.project_dir = project_dir
 
         downloads_dir = os.path.join(project_dir, 'build/action_folders/04.downloads')
         if not os.path.isdir(downloads_dir):
             raise ValueError('project does not download any files')
 
-        file_names = [fn for fn in os.listdir(downloads_dir) if re.match(r'[0-9]+.*', fn)]
+        file_names = [fn for fn in os.listdir(downloads_dir) if re.match(r'[0-9]+.*', fn) and not re.match(r'[0-9]+.*.new$', fn)]
         if len(file_names) == 0:
             raise ValueError('project does not download any files')
 
-        if args.download is None:
+        if self.download is None:
             if len(file_names) != 1:
-                raise ValueError('no download file specified')
-            args.download = file_names[0]
+                files = '\n'
+                for f in file_names:
+                    files += '            {}\n'.format(f)
+                raise ValueError('no download file specified. Please specify one of the following files:'+files)
+            self.download = file_names[0]
         else:
-            if args.download not in file_names:
-                raise ValueError(args.download + ' does not exist in project')
-        args.download = os.path.join(downloads_dir, os.path.basename(args.download))
+            if self.download not in file_names:
+                raise ValueError(self.download + ' does not exist in project')
+        self.download = os.path.join(downloads_dir, os.path.basename(self.download))
 
 
-    def main(self, args):
+
+class VersionUpdater:
+    """
+        CBF VersionUpdater class
+    """
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
+        # create file handler which logs even debug messages
+        fh = logging.FileHandler('version_updater.log')
+        fh.setLevel(logging.DEBUG)
+        # create console handler with a higher log level
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.ERROR)
+        # create formatter and add it to the handlers
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+        # add the handlers to the logger
+        self.logger.addHandler(fh)
+        self.logger.addHandler(ch)
+
+    def main(self, cmdargs):
         """
         Run the code.  See the usage function for more info.
         """
-        self.logger.debug("Entering main with args: %s" % args)
-        args = self.getargs()
-        self.validate_options(args)
+        self.logger.debug("Entering main with args: %s" % cmdargs)
+        args = GetArgs()
+        args.validate_options()
+
+        versions_dir = os.path.join(args.pdr_dir, 'versions')
+        os_version_files = CbfVersions(versions_dir)
 
         download_file = CbfDownloadFile(args)
         vstring = download_file.vstring
-        download_file.update_file()
+        download_file.update_file(os_version_files)
 
         docker_name = os.path.join(args.project_dir, 'Dockerfile')
         docker_file = CbfDocker(docker_name, vstring, args.version)
@@ -348,9 +413,7 @@ class VersionUpdater:
         compose_file = CbfCompose(compose_name, vstring, args.version)
         compose_file.update_file()
 
-        versions_dir = os.path.join(args.pdr_dir, 'versions')
-        versions_file = CbfVersions(versions_dir, vstring, args.version)
-        versions_file.update_file()
+        os_version_files.update_file(vstring, args.version)
 
         return 0
 

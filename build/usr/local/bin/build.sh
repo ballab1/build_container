@@ -64,6 +64,11 @@ function my.cmdLineArgs()
         esac
     done
 
+    if [ -z "$(git submodule)" ];then
+        term.log 'Invalid directory.' 'error'
+        exit 1
+    fi
+
     appenv.results "$@"
 }
 

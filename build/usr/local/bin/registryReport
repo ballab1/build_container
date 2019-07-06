@@ -8,12 +8,14 @@ function registryReport.usage()
     cat >&2 << EOF
 Usage:
     $progname [ -h|--help ] |
+              [ --catalog ] |
               [ --format <json|text> ] |
               [ --output <filename> ]
               <repository> | <repository> | <repository>
 
     Common options:
         -h --help                 Display a basic set of usage instructions
+        -c --catalog              dump the registry catalog (as json)
         -f --format <json|text>   format output as JSON|TEXT
         -o --output <filename>    name of file to output
 
@@ -33,7 +35,7 @@ function registryReport.cmdLineArgs()
 
     # Parse command-line options into above variable
     local -r progname="$( basename "${BASH_SOURCE[0]}" )"
-    local -r options=$(getopt --longoptions "help,Help,HELP,format:,output:" --options "Hhf:o:" --name "$progname" -- "$@") || "$usage" $?
+    local -r options=$(getopt --longoptions "help,Help,HELP,catalog,format:,output:" --options "Hhcf:o:" --name "$progname" -- "$@") || "$usage" $?
     eval set -- "$options"
 
     local -A opts=( ['format']='json' )
@@ -42,6 +44,7 @@ function registryReport.cmdLineArgs()
             -h|--h|--help|-help)  "$usage" 1;;
             -H|--H|--HELP|-HELP)  "$usage" 1;;
             --Help|-Help)         "$usage" 1;;
+            -c|--c|--catalog)     opts['catalog']=1; shift;;
             -f|--f|--format)      opts['format']=$2; shift 2;;
             -o|--o|--output)      opts['output']="$2"; shift 2;;
             --)                 shift; break;;
@@ -61,8 +64,40 @@ function registryReport.formatTextReport()
                --volume "/tmp:/tmp" \
                -e "JSON=/tmp/reportCatalog.json" \
                --workdir /home/groovy/scripts \
-               groovy:2.6-jre-alpine \
+               "$(registry.SERVER)alpine/groovy:2.6-jre" \
                groovy registryReport.groovy  
+}
+
+#----------------------------------------------------------------------------------------------
+function registryReport.reportCatalogAsJson()
+{
+    local -a catalog=( "$@" )
+    [ "${#catalog[*]}" -gt 0 ] || catalog=( '.+' )
+
+    if [ '' ]; then
+        local tmpfile="$(mktemp)"
+        printf '%s\n' "${catalog[@]}" > "$tmpfile"
+        mapfile -t catalog < <(registry.catalog | grep -E -f "$tmpfile" ||:) # ignore errors
+        rm "$tmpfile"
+    else
+        mapfile -t catalog < <(registry.catalog | grep -E -f <(printf '%s\n' "${catalog[@]}") | sort ||:)
+    fi
+
+    if [ "${#catalog[*]}" -gt 0 ]; then
+        echo -n '['
+        local -i index=0
+        for entry in "${catalog[@]}"; do
+            (( index++ )) && echo -n ','
+
+            local digests="$(registry.digests "$entry")"
+            printf '{"id":"%05d","repository":"%s"' "$index" "$entry"
+            [ -z "$digests" ] || echo -n ',"digests":['"${digests}]"
+            echo -n '}'
+        done
+        echo -n ']'
+    else
+        term.elog 'No content specified' 'warn'
+    fi
 }
 
 #----------------------------------------------------------------------------------------------
@@ -73,21 +108,28 @@ function registryReport.reportCatalog()
     readonly opts
     [ $# -gt 0 ] && shift
 
-    if [ "${opts['format']}" = 'json' ]; then
+    if [ "${opts['catalog']:-}" ]; then
+        registry.catalog
+
+    elif [ "${opts['format']}" = 'json' ]; then
         if [ "${opts['output']:-}" ]; then
-            registry.reportCatalogAsJson "$@" > "${opts['output']}"
+            registryReport.reportCatalogAsJson "$@" > "${opts['output']}"
         else
-            registry.reportCatalogAsJson "$@"
+            registryReport.reportCatalogAsJson "$@"
         fi
+
     else
-        registry.reportCatalogAsJson "$@" > /tmp/reportCatalog.json
-        if [ "${opts['output']:-}" ]; then
-            registryReport.formatTextReport /tmp/reportCatalog.json > "${opts['output']}"
-        else
-            registryReport.formatTextReport /tmp/reportCatalog.json
+        registryReport.reportCatalogAsJson "$@" > /tmp/reportCatalog.json
+        if registryReport.formatTextReport /tmp/reportCatalog.json ;then
+            if [ "${opts['output']:-}" ]; then
+                mv ./registryReport.txt "${opts['output']}"
+            else
+                cat ./registryReport.txt
+                rm ./registryReport.txt
+           fi
         fi
-#        rm /tmp/reportCatalog.json
     fi
+    [ ! -e /tmp/reportCatalog.json ] || rm /tmp/reportCatalog.json
 }
 
 #----------------------------------------------------------------------------------------------
