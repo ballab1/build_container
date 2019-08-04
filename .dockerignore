@@ -7,6 +7,7 @@
 .cbfProject
  
 #build files
+build/usr/local/bin/bashlib
 docker-compose.*
 bin/*
 vols*/*
