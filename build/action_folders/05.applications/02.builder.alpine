@@ -11,4 +11,4 @@ pip install confluent_kafka "docker-compose==$COMPOSE_VERSION"
 chmod a+rx /usr/local/bin/*
 
 
-[ ! -e /usr/local/crf/startup/99.workdir.sh ] || rm /usr/local/crf/startup/99.workdir.sh
+[ ! -f "$(crf.STARTUP)/99.workdir.sh" ] || rm "$(crf.STARTUP)/99.workdir.sh"
