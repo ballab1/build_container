@@ -10,11 +10,11 @@ services:
                 COMPOSE_VERSION: ${COMPOSE_VERSION:-1.23.1}
                 CONTAINER_NAME: build_container
                 GIT_CRYPT_VERSION: ${GIT_CRYPT_VERSION:-0.6.0}
-                FROM_BASE: ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
+                FROM_BASE: ${DOCKER_REGISTRY:-ubuntu-s2.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
             cache_from:
-                - ${DOCKER_REGISTRY:-ubuntu-s2:5000/}thirdparty/${CONTAINER_OS:-alpine}:${OS_VERSION:-}
-                - ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/base_container:${BASE_TAG:-latest}
-                - ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
+                - ${DOCKER_REGISTRY:-ubuntu-s2.home:5000/}thirdparty/${CONTAINER_OS:-alpine}:${OS_VERSION:-}
+                - ${DOCKER_REGISTRY:-ubuntu-s2.home:5000/}${CONTAINER_OS:-alpine}/base_container:${BASE_TAG:-latest}
+                - ${DOCKER_REGISTRY:-ubuntu-s2.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
             context: .
             dockerfile: Dockerfile
             labels:
@@ -30,7 +30,7 @@ services:
         environment:
             DEBUG_TRACE: ${DEBUG_TRACE:-0}
         hostname: builder
-        image: ${DOCKER_REGISTRY:-ubuntu-s2:5000/}${CONTAINER_OS:-alpine}/build_container:${CONTAINER_TAG:-latest}
+        image: ${DOCKER_REGISTRY:-ubuntu-s2.home:5000/}${CONTAINER_OS:-alpine}/build_container:${CONTAINER_TAG:-latest}
         logging:
             driver: json-file
             options:
