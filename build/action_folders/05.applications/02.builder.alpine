@@ -7,8 +7,8 @@ apk add librdkafka librdkafka-dev
 sed -i -e 's/edge/v3.8/g' /etc/apk/repositories
 
 #pip install --upgrade pip
-pip install confluent_kafka "docker-compose==$COMPOSE_VERSION"
+pip install confluent_kafka "docker-compose==$COMPOSE_VERSION" ||:
+[ -e /usr/bin/docker-compose ] || exit 1
 chmod a+rx /usr/local/bin/*
 
-
-[ ! -f "$(crf.STARTUP)/99.workdir.sh" ] || rm "$(crf.STARTUP)/99.workdir.sh"
+[ ! -e /usr/local/crf/startup/99.workdir.sh ] || rm /usr/local/crf/startup/99.workdir.sh
