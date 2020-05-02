@@ -4,4 +4,5 @@
 
 declare -a PKGS=(libtool
                  g++
-                 make )
+                 make
+                 maven )

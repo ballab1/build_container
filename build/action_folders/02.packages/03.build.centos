@@ -8,4 +8,5 @@ declare -a PKGS=(build-base
                  gcc-objc
                  git
                  gnutls-utils
-                 libtool )
+                 libtool
+                 maven )
