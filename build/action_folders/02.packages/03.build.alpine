@@ -16,7 +16,6 @@ declare -a PKGS=( alpine-sdk
                   libxml2-dev
                   linux-headers
                   make
-                  maven
                   mysql
                   perl-plack
                   'py-pip==10.0.1-r0'

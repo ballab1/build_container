@@ -3,6 +3,4 @@
 #declare -a OPTS=( '.buildDependencies' ) 
 
 declare -a PKGS=(libtool
-                 g++
-                 make
-                 maven )
+                 make )
