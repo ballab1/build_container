@@ -18,6 +18,6 @@ declare -a PKGS=( alpine-sdk
                   make
                   mysql
                   perl-plack
-                  'py-pip==10.0.1-r0'
-                  python2-dev
+                  py3-pip
+                  python3-dev
                   rsync )
