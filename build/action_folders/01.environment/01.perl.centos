@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# enable the perl2.24.3 RPMs
+yum install -y centos-release-scl
+yum-config-manager --enable rhel-server-rhscl-7-rpms
+
+# install perl base (cannot be done during package install)
+yum install -y rh-perl524
+scl enable rh-perl524 bash
+
+# add perl2.24.3 to path
+declare -ar env_perl=(
+    'PATH="/opt/rh/rh-perl524/root/usr/bin:${PATH}"'
+)
+
+crf.updateRuntimeEnvironment "${env_perl[@]}" 
+ 
