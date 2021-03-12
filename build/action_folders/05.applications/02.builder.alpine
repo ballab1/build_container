@@ -2,9 +2,9 @@
 
 : ${COMPOSE_VERSION:?"Environment variable 'COMPOSE_VERSION' not defined in '${BASH_SOURCE[0]}'"}
 
-sed -i -e 's/v3.8/edge/g' /etc/apk/repositories
+sed -i -e 's/v3.12/edge/g' /etc/apk/repositories
 apk add librdkafka librdkafka-dev
-sed -i -e 's/edge/v3.8/g' /etc/apk/repositories
+sed -i -e 's/edge/v3.12/g' /etc/apk/repositories
 
 #pip install --upgrade pip
 pip install confluent_kafka "docker-compose==$COMPOSE_VERSION" ||:
