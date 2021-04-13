@@ -6,4 +6,5 @@ declare -a PKGS=(expat-devel
                  gcc-objc
                  git
                  gnutls-utils
-                 libtool )
+                 libtool
+                 maven )

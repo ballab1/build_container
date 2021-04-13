@@ -10,11 +10,11 @@ services:
                 COMPOSE_VERSION: ${COMPOSE_VERSION:-1.23.1}
                 CONTAINER_NAME: build_container
                 GIT_CRYPT_VERSION: ${GIT_CRYPT_VERSION:-0.6.0}
-                FROM_BASE: ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
+                FROM_BASE: ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-.11.0.9_p11-r0}:${BASE_TAG:-latest}
             cache_from:
-                - ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}thirdparty/${CONTAINER_OS:-alpine}:${OS_VERSION:-}
+                - ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}thirdparty/${CONTAINER_OS:-alpine}:${OS_VERSION:-3.12.4}
                 - ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}${CONTAINER_OS:-alpine}/base_container:${BASE_TAG:-latest}
-                - ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-8.171.11-r0}:${BASE_TAG:-latest}
+                - ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-.11.0.9_p11-r0}:${BASE_TAG:-latest}
             context: .
             dockerfile: Dockerfile
             labels:

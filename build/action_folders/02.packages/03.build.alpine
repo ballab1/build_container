@@ -16,8 +16,9 @@ declare -a PKGS=( alpine-sdk
                   libxml2-dev
                   linux-headers
                   make
+                  maven
                   mysql
                   perl-plack
-                  py3-pip
+#                  py3-pip
                   python3-dev
                   rsync )
