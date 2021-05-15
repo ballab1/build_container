@@ -14,7 +14,7 @@ COPY build Dockerfile /tmp/
 ENV DEBUG_TRACE=0
 
 # kafka.broker version being bundled in this docker image
-ARG COMPOSE_VERSION=1.23.1
+ARG COMPOSE_VERSION=1.29.2
 LABEL version.kafka.docker_compose=$COMPOSE_VERSION
 ARG FIXUID_VERSION=0.5
 LABEL version.fixuid=$FIXUID_VERSION 

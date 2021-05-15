@@ -3,9 +3,9 @@
 : ${COMPOSE_VERSION:?"Environment variable 'COMPOSE_VERSION' not defined in '${BASH_SOURCE[0]}'"}
 
 # need librdkafka v1.6 or later. only edge has it
-sed -i -e 's/v3.12/edge/g' /etc/apk/repositories
+sed -i -e 's|v3.13|edge|g' /etc/apk/repositories
 apk add librdkafka librdkafka-dev
-sed -i -e 's/edge/v3.12/g' /etc/apk/repositories
+sed -i -e "s|edge|v3.13|g" /etc/apk/repositories
 
 [ ! -e /usr/local/crf/startup/99.workdir.sh ] || rm /usr/local/crf/startup/99.workdir.sh
 
