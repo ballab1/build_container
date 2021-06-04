@@ -3,11 +3,15 @@
 : ${COMPOSE_VERSION:?"Environment variable 'COMPOSE_VERSION' not defined in '${BASH_SOURCE[0]}'"}
 
 # need librdkafka v1.6 or later. only edge has it
-sed -i -e 's|v3.13|edge|g' /etc/apk/repositories
+declare vers="$(cat /etc/os-release | grep VERSION_ID | cut -d '=' -f 2)"
+vers="${vers%.*}"
+sed -i -e "s|v${vers}|edge|g" /etc/apk/repositories
 apk add librdkafka librdkafka-dev
-sed -i -e "s|edge|v3.13|g" /etc/apk/repositories
+sed -i -e "s|edge|v${vers}|g" /etc/apk/repositories
 
 [ ! -e /usr/local/crf/startup/99.workdir.sh ] || rm /usr/local/crf/startup/99.workdir.sh
+
+export CRYPTOGRAPHY_DONT_BUILD_RUST=1
 
 #pip install --upgrade pip
 #wget https://bootstrap.pypa.io/ez_setup.py -O - | python3
