@@ -16,7 +16,7 @@ ENV DEBUG_TRACE=0
 # kafka.broker version being bundled in this docker image
 ARG COMPOSE_VERSION=1.29.2
 LABEL version.kafka.docker_compose=$COMPOSE_VERSION
-ARG FIXUID_VERSION=0.5
+ARG FIXUID_VERSION=0.5.1
 LABEL version.fixuid=$FIXUID_VERSION 
 ARG GIT_CRYPT_VERSION=0.6.0
 LABEL version.git_crypt=$GIT_CRYPT_VERSION 
