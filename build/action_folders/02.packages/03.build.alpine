@@ -2,6 +2,7 @@
 
 declare -a PKGS=( alpine-sdk
                   build-base
+                  compat-openssl10-devel
                   expat-dev
                   file
                   g++
