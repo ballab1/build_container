@@ -14,11 +14,13 @@ COPY build Dockerfile /tmp/
 ENV DEBUG_TRACE=0
 
 # kafka.broker version being bundled in this docker image
-ARG COMPOSE_VERSION=1.29.2
+ARG COMPOSE_VERSION=2.17.3
 LABEL version.kafka.docker_compose=$COMPOSE_VERSION
+ARG LIBRDKAFKA_VERSION=2.1.1
+LABEL version.librdkafka=$LIBRDKAFKA_VERSION
 ARG FIXUID_VERSION=0.5.1
 LABEL version.fixuid=$FIXUID_VERSION 
-ARG GIT_CRYPT_VERSION=0.6.0
+ARG GIT_CRYPT_VERSION=0.7.0
 LABEL version.git_crypt=$GIT_CRYPT_VERSION 
 
 ARG BUILDER_HOME=/home/builder

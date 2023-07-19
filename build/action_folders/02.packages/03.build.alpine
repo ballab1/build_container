@@ -2,7 +2,6 @@
 
 declare -a PKGS=( alpine-sdk
                   build-base
-                  compat-openssl10-devel
                   expat-dev
                   file
                   g++
@@ -12,13 +11,16 @@ declare -a PKGS=( alpine-sdk
                   gnutls-utils
                   jpeg
                   libc6-compat
+                  libffi-dev
+                  librdkafka-dev
                   libtool
                   libxml2-dev
                   linux-headers
                   make
                   maven
+                  musl-dev
                   mysql
                   perl-plack
-#                  py3-pip
+                  py3-pip
                   python3-dev
                   rsync )

@@ -6,4 +6,5 @@ GIT_CRYPT['dir']=/tmp/git-crypt-${GIT_CRYPT['version']}
 GIT_CRYPT['file']="/tmp/git-crypt-${GIT_CRYPT['version']}.tar.gz"
 GIT_CRYPT['url']="https://github.com/AGWA/git-crypt/archive/${GIT_CRYPT['version']}.tar.gz"
 GIT_CRYPT['sha256_0.6.0']="777c0c7aadbbc758b69aff1339ca61697011ef7b92f1d1ee9518a8ee7702bb78"
+GIT_CRYPT['sha256_0.7.0']="2210a89588169ae9a54988c7fdd9717333f0c6053ff704d335631a387bd3bcff"
 GIT_CRYPT['sha256']="${GIT_CRYPT['sha256_'${GIT_CRYPT['version']}]}"

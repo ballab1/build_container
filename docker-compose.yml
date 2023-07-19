@@ -7,8 +7,9 @@ services:
         build:
             args:
                 CBF_VERSION: ${CBF_VERSION:-}
-                COMPOSE_VERSION: ${COMPOSE_VERSION:-1.29.2}
+                COMPOSE_VERSION: ${COMPOSE_VERSION:-2.17.3}
                 CONTAINER_NAME: build_container
+                LIBRDKAFKA_VERSION: ${LIBRDKAFKA_VERSION:-2.1.1}
                 GIT_CRYPT_VERSION: ${GIT_CRYPT_VERSION:-0.6.0}
                 FROM_BASE: ${DOCKER_REGISTRY:-s2.ubuntu.home:5000/}${CONTAINER_OS:-alpine}/openjdk/${JAVA_VERSION:-11.0.15_p10-r0}:${BASE_TAG:-latest}
             cache_from:
