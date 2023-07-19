@@ -4,11 +4,12 @@ declare -a PKGS=( bash-completion
                   coreutils
                   curl
                   docker
+                  docker-cli-compose
                   findutils
                   git
+                  git-crypt
                   git-lfs
-                  libffi
-                  libffi-dev
+                  librdkafka
                   jq
                   openssh-client
                   supervisor

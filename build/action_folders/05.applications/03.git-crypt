@@ -2,9 +2,9 @@
 
 : ${GIT_CRYPT_VERSION:?"Environment variable 'GIT_CRYPT_VERSION' not defined in '${BASH_SOURCE[0]}'"} 
 
-tar -xvf "${GIT_CRYPT['file']}"
-cd "${GIT_CRYPT['dir']}"
-make
-make install PREFIX=/usr/local
+#tar -xvf "${GIT_CRYPT['file']}"
+#cd "${GIT_CRYPT['dir']}"
+#make
+#make install PREFIX=/usr/local
 #make ENABLE_MAN=yes
 #make ENABLE_MAN=yes install

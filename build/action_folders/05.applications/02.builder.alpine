@@ -1,24 +1,16 @@
 #!/bin/bash
 
 : ${COMPOSE_VERSION:?"Environment variable 'COMPOSE_VERSION' not defined in '${BASH_SOURCE[0]}'"}
-
-# need librdkafka v1.6 or later. only edge has it
-declare vers="$(cat /etc/os-release | grep VERSION_ID | cut -d '=' -f 2)"
-vers="${vers%.*}"
-sed -i -e "s|v${vers}|edge|g" /etc/apk/repositories
-apk add librdkafka librdkafka-dev
-sed -i -e "s|edge|v${vers}|g" /etc/apk/repositories
+: ${LIBRDKAFKA_VERSION:?"Environment variable 'LIBRDKAFKA_VERSION' not defined in '${BASH_SOURCE[0]}'"}
 
 [ ! -e /usr/local/crf/startup/99.workdir.sh ] || rm /usr/local/crf/startup/99.workdir.sh
 
-export CRYPTOGRAPHY_DONT_BUILD_RUST=1
+#export CRYPTOGRAPHY_DONT_BUILD_RUST=1
 
 #pip install --upgrade pip
-#wget https://bootstrap.pypa.io/ez_setup.py -O - | python3
-#python3 "${PIP['file']}"
-wget https://bootstrap.pypa.io/get-pip.py -O - | python3
 
-pip install confluent_kafka==1.8.2 "docker-compose==$COMPOSE_VERSION" ||:
+pip install "confluent_kafka==$LIBRDKAFKA_VERSION" "docker-compose==$COMPOSE_VERSION" ||:
+
 [ -e /usr/bin/docker-compose ] || exit 1
 chmod a+rx /usr/local/bin/*
 
