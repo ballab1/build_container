@@ -7,6 +7,7 @@ services:
         build:
             args:
                 CBF_VERSION: ${CBF_VERSION:-}
+                FIXUID_VERSION: ${FIXUID_VERSION:-0.6.0}
                 COMPOSE_VERSION: ${COMPOSE_VERSION:-2.17.3}
                 CONTAINER_NAME: build_container
                 LIBRDKAFKA_VERSION: ${LIBRDKAFKA_VERSION:-2.1.1}
