@@ -2,6 +2,7 @@
 
 declare -a PKGS=( bash-completion
                   coreutils
+                  dos2unix
                   curl
                   docker
                   docker-cli-compose
@@ -13,6 +14,7 @@ declare -a PKGS=( bash-completion
                   jq
                   openssh-client
                   supervisor
+                  sed
                   sudo
                   ttf-dejavu
                   unzip
