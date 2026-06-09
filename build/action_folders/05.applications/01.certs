@@ -1,0 +1,29 @@
+#!/bin/bash
+
+declare -r cert_home=/usr/local/share/ca-certificates
+
+# unpack zip containing our certificates
+
+cd "$cert_home" ||:
+unzip "${CERTS['file']}"
+rm "$(crf.ENV)/01.CERTS"
+
+#############################################################################
+# Update certs on system
+#############################################################################
+# copy kubernetes read-only mounted secrets over to expected directory
+if [ -d /mnt/data/ca-certificates ]; then
+    cp -f /mnt/data/ca-certificates/* "${cert_home}/" ||:
+fi
+
+# load certs via system
+case "$( environ.OSid )" in
+    alpine|ubuntu)
+        update-ca-certificates -f 1>&2 ||:
+        ;;
+    centos|fedora)
+        update-ca-trust extract 1>&2 ||:
+        ;;
+esac
+
+rm "${cert_home}/"*

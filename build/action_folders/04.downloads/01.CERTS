@@ -1,0 +1,8 @@
+#!/bin/bash
+
+declare -A CERTS=()
+CERTS['file']="/tmp/CERTS.zip"
+CERTS['url']="https://s3.ubuntu.home/webdav/home/GIT/Soho-Ball.certs/Soho-Ball_CA/certs.tgz"
+#CERTS['sha256']="5c7f1899ea6634773f0439729f92464f6b823c51f361273f519ef90aec2b64c1"
+#CERTS['sha256']="76d7ffb8ec43f381d29c27b7343064b58e40d6e979e73309cbeec514d7798438"
+CERTS['sha256']="65fe9d64f196729d59b98f39428a958fcf00b2b8324d6c8f1a961b328f9d4dee"
