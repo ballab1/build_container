@@ -6,6 +6,7 @@ declare -a PKGS=( bash-completion
                   curl
                   docker
                   docker-cli-compose
+                  envsubst
                   findutils
                   git
                   git-crypt
