@@ -5,7 +5,7 @@ declare -r cert_home=/usr/local/share/ca-certificates
 # unpack zip containing our certificates
 
 cd "$cert_home" ||:
-unzip "${CERTS['file']}"
+tar -xzf "${CERTS['file']}"
 rm "$(crf.ENV)/01.CERTS"
 
 #############################################################################
