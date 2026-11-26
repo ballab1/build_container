@@ -5,8 +5,8 @@ declare -r cert_home=/usr/local/share/ca-certificates
 # unpack zip containing our certificates
 
 cd "$cert_home" ||:
-unzip "${CERTS['file']}"
-rm "$(crf.ENV)/01.CERTS"
+tar -xzf "${CERTS['file']}"
+rm "$(crf::ENV)/01.CERTS"
 
 #############################################################################
 # Update certs on system
@@ -17,7 +17,7 @@ if [ -d /mnt/data/ca-certificates ]; then
 fi
 
 # load certs via system
-case "$( environ.OSid )" in
+case "$( environ::OSid )" in
     alpine|ubuntu)
         update-ca-certificates -f 1>&2 ||:
         ;;

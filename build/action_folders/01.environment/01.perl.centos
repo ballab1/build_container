@@ -13,5 +13,4 @@ declare -ar env_perl=(
     'PATH="/opt/rh/rh-perl524/root/usr/bin:${PATH}"'
 )
 
-crf.updateRuntimeEnvironment "${env_perl[@]}" 
- 
+crf::updateRuntimeEnvironment "${env_perl[@]}"

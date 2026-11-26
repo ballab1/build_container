@@ -9,7 +9,7 @@
 
 #pip install --upgrade pip
 
-pip install "confluent_kafka==$LIBRDKAFKA_VERSION" "docker-compose==$COMPOSE_VERSION" ||:
+pip install "confluent_kafka==$LIBRDKAFKA_VERSION" "docker-compose==$COMPOSE_VERSION" --break-system-packages ||:
 
 [ -e /usr/bin/docker-compose ] || exit 1
 chmod a+rx /usr/local/bin/*
